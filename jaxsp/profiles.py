@@ -94,7 +94,13 @@ class GravPotential:
 
     def __call__(self, rkpc):
         return (
-            0.0 * jnp.heaviside(self.rmin - rkpc, 0.5)
+            jnp.heaviside(self.rmin - rkpc, 0.5)
+            * jax.lax.cond(
+                self._cached,
+                self._potential_interpolation,
+                self._potential_inside,
+                jnp.array([self.rmin]),
+            )
             + jnp.heaviside(rkpc - self.rmin, 0.5)
             * jax.lax.cond(
                 self._cached,
