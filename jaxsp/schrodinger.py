@@ -1,4 +1,5 @@
 import jax
+from jaxopt import Bisection
 import jax.numpy as jnp
 from functools import partial
 import warnings
@@ -34,18 +35,40 @@ class Schrodinger:
             * self.potential(jnp.array([self.potential.rmax]))[0]
         )
 
+    def E_nl(self, n, l):
+        def dirichlet_bc_at_rmax(Enl):
+            return self._schrodinger_solver(
+                l,
+                Enl,
+                saveat=SaveAt(t1=True),
+                max_steps=16**3,
+                rtol=1e-8,
+                atol=1e-8,
+            ).ys[0, 0]
+
+        bisec = Bisection(
+            optimality_fun=dirichlet_bc_at_rmax, lower=self.Emin, upper=self.Emax
+        )
+        E_nl = bisec.run().params
+        return E_nl
+
+    def R_nl(self, n, l):
+        E_nl = self.E_nl(n, l)
+        return self.schrodinger_solver(l, E_nl)
+
     def schrodinger_solver(
         self,
         l,
         Enl,
         rmax=None,
+        saveat=SaveAt(t0=False, t1=True, ts=None, dense=True),
         rtol=1e-8,
         atol=1e-8,
         max_steps=16**3,
         maxstep_warnings=False,
     ):
         try:
-            return self._schrodinger_solver(l, Enl, rmax, rtol, atol, max_steps)
+            return self._schrodinger_solver(l, Enl, saveat, rmax, rtol, atol, max_steps)
         except Exception as e:
             if "max_steps" in str(e):
                 max_steps = max_steps * 16
@@ -64,10 +87,11 @@ class Schrodinger:
         static_argnames=(
             "self",
             "max_steps",
+            "saveat",
         ),
     )
     def _schrodinger_solver(
-        self, l, Enl, rmax=None, rtol=1e-2, atol=1e-2, max_steps=16**3
+        self, l, Enl, saveat, rmax=None, rtol=1e-2, atol=1e-2, max_steps=16**3
     ):
         U0 = jnp.array(
             [self.potential.rmin ** (l + 1), (l + 1) * self.potential.rmin**l]
@@ -75,7 +99,6 @@ class Schrodinger:
         args = {"l": l, "Enl": Enl}
         term = ODETerm(self._schrodinger_derivative)
         solver = self._solver
-        saveat = SaveAt(t0=False, t1=True, ts=None, dense=True)
         stepsize_controller = PIDController(rtol=rtol, atol=atol)
         solution = diffeqsolve(
             terms=term,
