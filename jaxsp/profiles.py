@@ -12,22 +12,28 @@ class MassProfile:
         self.rmin = self.rgrid[0]
         self.rmax = self.rgrid[-1]
         self.Mgrid = data[:, 1]
+        self.dMgrid = jnp.maximum(data[:, 2] - data[:, 1], data[:, 3] - data[:, 1])
         self.log10rgrid = jnp.log10(self.rgrid)
         self.log10Mgrid = jnp.log10(self.Mgrid)
+        self.log10dMgrid = jnp.log10(self.dMgrid)
 
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, rkpc):
         return (
             self.Mgrid[0] * jnp.heaviside(self.rmin - rkpc, 0.5)
             + jnp.heaviside(rkpc - self.rmin, 0.5)
-            * self._mass_interpolation(rkpc)
+            * self._mass_interpolation(rkpc, self.log10rgrid, self.log10Mgrid)
             * jnp.heaviside(self.rmax - rkpc, 0.5)
-            + self.Mgrid[-1] * jnp.heaviside(rkpc - self.rmax, 0.5)
+            + self.Mgrid[-1] * jnp.heaviside(rkpc - self.rmax, 0.5),
+            self.dMgrid[0] * jnp.heaviside(self.rmin - rkpc, 0.5)
+            + jnp.heaviside(rkpc - self.rmin, 0.5)
+            * self._mass_interpolation(rkpc, self.log10rgrid, self.log10dMgrid)
+            * jnp.heaviside(self.rmax - rkpc, 0.5)
+            + self.dMgrid[-1] * jnp.heaviside(rkpc - self.rmax, 0.5),
         )
 
-    @partial(jax.jit, static_argnums=(0,))
-    def _mass_interpolation(self, rkpc):
-        return 10 ** jnp.interp(jnp.log10(rkpc), self.log10rgrid, self.log10Mgrid)
+    def _mass_interpolation(self, rkpc, log10rgrid, log10Mgrid):
+        return 10 ** jnp.interp(jnp.log10(rkpc), log10rgrid, log10Mgrid)
 
     def __repr__(self):
         return f"MassProfile(rmin={self.rmin} kpc, max={self.rmax} kpc, npoints={len(self.rgrid)})"
@@ -55,7 +61,7 @@ class DensityProfile:
 
     @partial(jax.jit, static_argnums=(0,))
     def _log10M(self, log10rkpc):
-        return jnp.log10(self.mass.__call__(10**log10rkpc))
+        return jnp.log10(self.mass(10**log10rkpc)[0])
 
     @partial(jax.jit, static_argnums=(0,))
     def _dlog10Mdlog10r(self, log10rkpc):
@@ -63,7 +69,7 @@ class DensityProfile:
 
     @partial(jax.jit, static_argnums=(0,))
     def _dm_dr(self, rkpc):
-        return self.mass(rkpc) * self._dlog10Mdlog10r(jnp.log10(rkpc)) / rkpc
+        return self.mass(rkpc)[0] * self._dlog10Mdlog10r(jnp.log10(rkpc)) / rkpc
 
     def __repr__(self):
         return f"DensityProfile(rmin={self.rmin} kpc, max={self.rmax} kpc, mass={self.mass})"
@@ -81,7 +87,7 @@ class DensityProfile:
 class GravPotential:
     def __init__(self, mass, rpts=1000, precache=True):
         self.mass = mass
-        self.mtot = self.mass(self.mass.rmax)
+        self.mtot = self.mass(self.mass.rmax)[0]
         self.rmin = self.mass.rmin
         self.rmax = self.mass.rmax
         self.rpts = rpts
@@ -126,7 +132,7 @@ class GravPotential:
     def get_integrator(self, rpts):
         def _int(rkpc, mass):
             rint = jnp.linspace(rkpc, mass.rmax, rpts)
-            return trapezoid(mass(rint) / rint**2, rint)
+            return trapezoid(mass(rint)[0] / rint**2, rint)
 
         _int_vm = jax.vmap(_int, in_axes=(0, None))
         return _int_vm
