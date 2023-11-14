@@ -48,10 +48,9 @@ def init_eigenstate_library(V, ma, E_max, rmax, N=4096):
     n_of_j = []
 
     l = 0
-    rmin = minimum_of_effective_potential(ma, l, V, 0.01, rmax)
     while True:
         H_diag, H_off_diag = construct_spherical_hamiltonian(rkpc, ma, l, V)
-        rmin = minimum_of_effective_potential(ma, l, V, 0.01, rmax)
+        rmin = minimum_of_effective_potential(ma, l, V, dr, rmax)
         E_min_l = V_effective(rmin, ma, l, V)
 
         # If circular orbit above energy cutoff...stop
