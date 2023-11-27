@@ -1,12 +1,9 @@
 from collections import namedtuple
-import matplotlib.pyplot as plt
 
-from jax import vmap, random, lax, jit, grad, nn
-from jax.scipy.special import erf
-from jaxopt._src.tree_util import tree_map
+from jax import vmap, random, lax, jit, grad
 import jax.numpy as jnp
 
-from jaxopt import GradientDescent, LBFGS
+from jaxopt import LBFGS
 
 from .interpolate import eval_interp1d
 
