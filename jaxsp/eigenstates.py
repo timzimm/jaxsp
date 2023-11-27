@@ -38,6 +38,7 @@ init_mult_spline_params = jax.vmap(
 def init_eigenstate_library(V, ma, E_max, rmax, N=4096):
     dr = rmax / N
     rkpc = dr * jnp.arange(1, N)
+    N = rkpc.shape[0]
 
     # Discetized radial eigenstate
     R_j_r = []
@@ -48,14 +49,23 @@ def init_eigenstate_library(V, ma, E_max, rmax, N=4096):
     n_of_j = []
 
     l = 0
+    H_off_diag = -1 / (2 * dr**2) * np.ones(N - 1)
     while True:
-        H_diag, H_off_diag = construct_spherical_hamiltonian(rkpc, ma, l, V)
         rmin = minimum_of_effective_potential(ma, l, V, dr, rmax)
         E_min_l = V_effective(rmin, ma, l, V)
 
         # If circular orbit above energy cutoff...stop
         if E_min_l > E_max:
             break
+        H_diag = (
+            -1 / (2 * dr**2) * -2 * np.ones(N)
+            + 0.5 * l * (l + 1) / rkpc**2
+            + mah_factor.value
+            * maV_factor.value
+            * ma**2
+            * to_kpc_factor.value
+            * V(rkpc)
+        )
         E_n, u_n = eigh_tridiagonal(
             H_diag, H_off_diag, select="v", select_range=(E_min_l, E_max)
         )
@@ -120,16 +130,3 @@ def minimum_of_effective_potential(ma, l, V, rmin, rmax):
         tol=1e-3,
     )
     return jnp.min(jnp.array([pg.run(1.0, hyperparams_proj=(rmin, rmax)).params, rmax]))
-
-
-def construct_spherical_hamiltonian(rkpc, ma, l, V):
-    N = rkpc.shape[0]
-    dr = rkpc[1] - rkpc[0]
-    H_off_diag = -1 / (2 * dr**2) * np.ones(N - 1)
-
-    H_diag = (
-        -1 / (2 * dr**2) * -2 * np.ones(N)
-        + 0.5 * l * (l + 1) / rkpc**2
-        + mah_factor.value * maV_factor.value * ma**2 * to_kpc_factor.value * V(rkpc)
-    )
-    return H_diag, H_off_diag
