@@ -1,10 +1,20 @@
-from collections import namedtuple
+from typing import NamedTuple
+
 import jax.numpy as jnp
 from jax.lax import dynamic_slice
 
-# Note: This is a reduced version of dbstein/fast_interp
 
-interpolation_params = namedtuple("interpolation_params", ["a", "dx", "f", "lb", "ub"])
+class interpolation_params(NamedTuple):
+    """
+    Parameters specifying a Taylor interpolant.
+    This is a reduced version of dbstein/fast_interp
+    """
+
+    a: float
+    dx: float
+    f: float
+    lb: float
+    ub: float
 
 
 def _extrapolate1d_x(f):
