@@ -3,7 +3,6 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from .constants import GN
 from .interpolate import init_1d_interpolation_params, eval_interp1d
 from .chebyshev import chebyshev_pts, clenshaw_curtis_weights
 
@@ -15,7 +14,7 @@ def init_potential_params(enclosed_mass, rmin, rmax, N):
     """
 
     def dPhi(r):
-        return -GN.value * enclosed_mass(r) / r**2
+        return -1.0 / (4 * jnp.pi) * enclosed_mass(r) / r**2
 
     @jax.jit
     @partial(jax.vmap, in_axes=(0, None))

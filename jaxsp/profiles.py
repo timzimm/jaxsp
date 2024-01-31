@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 from jaxopt import Broyden
 
-from .constants import Delta, rho_crit
+from .constants import Delta, om
 
 
 class core_NFW_tides_params(NamedTuple):
@@ -22,7 +22,7 @@ class core_NFW_tides_params(NamedTuple):
 
     @property
     def rs(self):
-        return (3.0 / 4.0 * self.M200 / (jnp.pi * Delta.value * rho_crit.value)) ** (
+        return (3.0 / 4.0 * self.M200 * om.value / (jnp.pi * Delta.value)) ** (
             1.0 / 3.0
         ) / self.c
 
@@ -32,7 +32,7 @@ class core_NFW_tides_params(NamedTuple):
 
     @property
     def rho0(self):
-        return rho_crit.value * Delta.value * self.c**3.0 * self.g / 3.0
+        return 1.0 / om.value * Delta.value * self.c**3.0 * self.g / 3.0
 
 
 def init_core_NFW_tides_params_from_sample(sample):
