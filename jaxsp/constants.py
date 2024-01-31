@@ -3,6 +3,40 @@ import jax.numpy as jnp
 
 
 @chex.dataclass
+class Delta:
+    """Virial overdensity parameter"""
+
+    value: float = 200
+
+    @property
+    def unit(self):
+        return ""
+
+    def __call__(self):
+        return self.value
+
+    def __repr__(self):
+        return f"Delta: {self.value} {self.unit}"
+
+
+@chex.dataclass
+class rho_crit:
+    """Critical overdensity parameter"""
+
+    value: float = 135.05
+
+    @property
+    def unit(self):
+        return "M_sun/kpc^3"
+
+    def __call__(self):
+        return self.value
+
+    def __repr__(self):
+        return f"rho_crit: {self.value} {self.unit}"
+
+
+@chex.dataclass
 class GN:
     """Gravitational constant in kpc3 Msun-1 Gyr-2"""
 
