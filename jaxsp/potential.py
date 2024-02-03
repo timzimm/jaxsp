@@ -1,20 +1,41 @@
+from typing import NamedTuple
 from functools import partial
+import hashlib
 
 import jax
 import jax.numpy as jnp
 
-from .interpolate import init_1d_interpolation_params, eval_interp1d
+from .interpolate import (
+    init_1d_interpolation_params,
+    eval_interp1d,
+)
+from .profiles import enclosed_mass
 from .chebyshev import chebyshev_pts, clenshaw_curtis_weights
+from .io_utils import hash_to_int32
 
 
-def init_potential_params(enclosed_mass, rmin, rmax, N):
+class potential_params(NamedTuple):
+    name: int
+    interpolation_params: NamedTuple
+
+    @classmethod
+    def compute_name(cls, enclosed_mass_params, rmin, rmax, N):
+        combined = hashlib.sha256()
+        combined.update(hashlib.md5(jnp.asarray(rmin)).digest())
+        combined.update(hashlib.md5(jnp.asarray(rmax)).digest())
+        combined.update(hashlib.md5(jnp.asarray(N)).digest())
+        combined.update(hashlib.md5(jnp.asarray(enclosed_mass_params.name)).digest())
+        return hash_to_int32(combined.hexdigest())
+
+
+def init_potential_params(enclosed_mass_params, rmin, rmax, N):
     """
     Initialises a gravitational potential interpolator from the enclosed mass
     profile M(<r)
     """
 
     def dPhi(r):
-        return -1.0 / (4 * jnp.pi) * enclosed_mass(r) / r**2
+        return -1.0 / (4 * jnp.pi) * enclosed_mass(r, enclosed_mass_params) / r**2
 
     @jax.jit
     @partial(jax.vmap, in_axes=(0, None))
@@ -25,6 +46,11 @@ def init_potential_params(enclosed_mass, rmin, rmax, N):
         radius r appears as parameter in the integrand
         """
         return dPhi((x + 1) / (1 - x) + r) * 2 / (1 - x) ** 2
+
+    result_shape = jax.ShapeDtypeStruct((), jnp.int32)
+    name = jax.pure_callback(
+        potential_params.compute_name, result_shape, enclosed_mass_params, rmin, rmax, N
+    )
 
     tmin = jnp.log(rmin)
     tmax = jnp.log(rmax)
@@ -37,11 +63,12 @@ def init_potential_params(enclosed_mass, rmin, rmax, N):
     xj = chebyshev_pts(N)[1:]
     wj = clenshaw_curtis_weights(N)[1:]
     potential_t = dPhi_rescaled(r, xj) @ wj
-    return init_1d_interpolation_params(tmin, t[1] - t[0], potential_t)
+    params = init_1d_interpolation_params(tmin, t[1] - t[0], potential_t)
+    return potential_params(name=name, interpolation_params=params)
 
 
-def eval_potential(r, potenial_params):
+def potential(r, potenial_params):
     """
     Evaluates the gravitational potential interpolator
     """
-    return eval_interp1d(jnp.log(r), potenial_params)
+    return eval_interp1d(jnp.log(r), potenial_params.interpolation_params)

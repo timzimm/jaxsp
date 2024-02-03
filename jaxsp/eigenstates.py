@@ -1,21 +1,38 @@
-from collections import namedtuple
+from typing import NamedTuple
+import hashlib
 
 import numpy as np
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 from scipy.linalg import eigh_tridiagonal
-from jaxopt import ProjectedGradient
-from jaxopt.projection import projection_box
+from jaxopt import Bisection
 
-from .constants import mah_factor, maV_factor, to_kpc_factor
-from .interpolate import init_1d_interpolation_params
-
-_eigenstate_library = namedtuple(
-    "eigenstate_library", ["R_j_params", "E_j", "l_of_j", "n_of_j"]
-)
+from .interpolate import init_1d_interpolation_params, eval_interp1d
+from .potential import potential
+from .utils import quad
+from .io_utils import hash_to_int32
 
 
-class eigenstate_library(_eigenstate_library):
+class eigenstate_library(NamedTuple):
+    """
+    Parameters specifying the eigenstate_library
+    """
+
+    R_j_params: NamedTuple
+    E_j: ArrayLike
+    l_of_j: ArrayLike
+    n_of_j: ArrayLike
+
+    @classmethod
+    def compute_name(cls, potential_params, r_ta, N):
+        combined = hashlib.sha256()
+        combined.update(hashlib.md5(jnp.asarray(r_ta)).digest())
+        combined.update(hashlib.md5(jnp.asarray(N)).digest())
+        combined.update(hashlib.md5(f"{potential_params.name}")).digest()
+        combined.update(hashlib.md5(jnp.asarray(potential_params.name)).digest())
+        return hash_to_int32(combined.hexdigest())
+
     def j_of_nl(self, n, l):
         n = int(n)
         l_index = jnp.searchsorted(self.l_of_j, l)
@@ -27,7 +44,7 @@ class eigenstate_library(_eigenstate_library):
         return self.E_j.shape[0]
 
     def __repr__(self):
-        return f"eigenstate_library(\nJ={len(self.l_of_j)},\nl_of_j={self.l_of_j},\nn_of_j={self.n_of_j})"
+        return f"eigenstate_library:\n\tJ={len(self.l_of_j)},\n\tl_of_j={self.l_of_j},\n\tn_of_j={self.n_of_j})"
 
 
 init_mult_spline_params = jax.vmap(
@@ -35,10 +52,58 @@ init_mult_spline_params = jax.vmap(
 )
 
 
-def init_eigenstate_library(V, ma, E_max, rmax, N=4096):
-    dr = rmax / N
-    rkpc = dr * jnp.arange(1, N)
-    N = rkpc.shape[0]
+def V_effective(r, l, potential_params):
+    return 0.5 * l * (l + 1) / (1e-10 + r**2) + potential(r, potential_params)
+
+
+def minimum_of_effective_potential(r_ta, l, potential_params):
+    if l == 0:
+        return 0.0
+    obj = jax.grad(lambda r: V_effective(r, l, potential_params))
+    pg = Bisection(
+        optimality_fun=obj,
+        lower=1e-10,
+        upper=r_ta - 1e-10,
+        tol=1e-3,
+    )
+    rmin = pg.run().params
+    return rmin
+
+
+def wkb_estimate_of_rmax(r_ta, l, potential_params):
+    @jax.vmap
+    def r_classical_Veff(r):
+        return V_effective(r, l, potential_params) - potential(r_ta, potential_params)
+
+    def wkb_condition_Veff(r_lower, r_upper):
+        return (
+            jnp.sqrt(2)
+            * quad(lambda r: jnp.sqrt(r_classical_Veff(r)), r_lower, r_upper)
+            - 20
+        )
+
+    # Determine radius according to WKB decay in forbidden region
+    bisec = Bisection(
+        optimality_fun=lambda r: wkb_condition_Veff(r_ta, r),
+        lower=r_ta,
+        upper=10 * r_ta,
+    )
+    Rmax = bisec.run().params
+
+    return Rmax
+
+
+def check_mode_heath(E_n, E_min, E_max):
+    if E_n.shape[0] == 0:
+        raise Exception(f"No modes inside [{E_min:.2f}, {E_max:2f}]")
+    if np.any(E_n.imag > 1e-10 * E_n.real):
+        raise Exception("Eigenvalue with significant imaginary part found")
+    if np.any(np.unique(E_n, return_counts=True)[1] > 1):
+        raise Exception("Degeneracy detected. This is impossible in 1D.")
+
+
+def init_eigenstate_library(potential_params, r_ta, N=4096):
+    V = jax.vmap(potential, in_axes=(0, None))
 
     # Discetized radial eigenstate
     R_j_r = []
@@ -48,46 +113,34 @@ def init_eigenstate_library(V, ma, E_max, rmax, N=4096):
     l_of_j = []
     n_of_j = []
 
-    l = 0
-    H_off_diag = -1 / (2 * dr**2) * np.ones(N - 1)
+    lmax = 0
+    E_max = potential(r_ta, potential_params)
     while True:
-        rmin = minimum_of_effective_potential(ma, l, V, dr, rmax)
-        E_min_l = V_effective(rmin, ma, l, V)
-
-        # If circular orbit above energy cutoff...stop
+        rmin = minimum_of_effective_potential(r_ta, lmax, potential_params)
+        E_min_l = V_effective(rmin, lmax, potential_params)
         if E_min_l > E_max:
             break
+        lmax += 1
+
+    for l in range(lmax):
+        rmin = minimum_of_effective_potential(r_ta, l, potential_params)
+        E_min_l = V_effective(rmin, l, potential_params)
+
+        rmax = wkb_estimate_of_rmax(r_ta, l, potential_params)
+        dr = rmax / N
+        r = dr * jnp.arange(1, N)
+
+        H_off_diag = -1 / (2 * dr**2) * jnp.ones(r.shape[0] - 1)
         H_diag = (
-            -1 / (2 * dr**2) * -2 * np.ones(N)
-            + 0.5 * l * (l + 1) / rkpc**2
-            + mah_factor.value
-            * maV_factor.value
-            * ma**2
-            * to_kpc_factor.value
-            * V(rkpc)
+            -1 / (2 * dr**2) * -2 * jnp.ones_like(r)
+            + 0.5 * l * (l + 1) / r**2
+            + V(r, potential_params)
         )
         E_n, u_n = eigh_tridiagonal(
-            H_diag, H_off_diag, select="v", select_range=(E_min_l, E_max)
+            H_diag, H_off_diag, select="v", select_range=(E_min_l.item(), E_max.item())
         )
 
-        # If no mode exists in interval...stop
-        if E_n.shape[0] == 0:
-            break
-
-        # Add noise floor to all modes so that the number of roots is equal
-        # to n
-        u_n = u_n + 10 * jnp.finfo(jnp.float64).eps
-
-        # Check if states are degenerate (this is impossible in 1D and bound,
-        # normalizable states. If it happens, numerics is tha cause.
-        if np.any(np.unique(E_n, return_counts=True)[1] > 1):
-            print(
-                "Degeneracy detected. This is impossible in 1D. "
-                "Consider tweaking N/L."
-            )
-            break
-
-        R_n = u_n / (rkpc[:, np.newaxis] * jnp.sqrt(rkpc[1] - rkpc[0]))
+        R_n = u_n / (r[:, np.newaxis] * jnp.sqrt(dr))
         R_j_r.append(jnp.asarray(R_n.T))
         E_j.append(jnp.asarray(E_n))
         l_of_j.append(l * jnp.ones_like(E_n))
@@ -100,7 +153,7 @@ def init_eigenstate_library(V, ma, E_max, rmax, N=4096):
     l_of_j = jnp.concatenate(l_of_j)
     n_of_j = jnp.concatenate(n_of_j)
 
-    R_j_params = init_mult_spline_params(rkpc[0], dr, R_j_r)
+    R_j_params = init_mult_spline_params(r[0], dr, R_j_r)
 
     return eigenstate_library(
         R_j_params=R_j_params,
@@ -110,23 +163,5 @@ def init_eigenstate_library(V, ma, E_max, rmax, N=4096):
     )
 
 
-def V_effective(rkpc, ma, l, V):
-    return (
-        0.5 * l * (l + 1) / rkpc**2
-        + mah_factor.value
-        * maV_factor.value
-        * ma**2
-        * to_kpc_factor.value
-        * V(jnp.array([rkpc]))[0]
-    )
-
-
-def minimum_of_effective_potential(ma, l, V, rmin, rmax):
-    if l == 0:
-        return rmin
-    pg = ProjectedGradient(
-        fun=lambda r: V_effective(r, ma, l, V),
-        projection=projection_box,
-        tol=1e-3,
-    )
-    return jnp.min(jnp.array([pg.run(1.0, hyperparams_proj=(rmin, rmax)).params, rmax]))
+def eval_eigenstate(r, R_j_params):
+    return eval_interp1d(r, R_j_params)
