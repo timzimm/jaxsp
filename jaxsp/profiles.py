@@ -22,7 +22,7 @@ class core_NFW_tides_params(NamedTuple):
 
     @property
     def rs(self):
-        return (3.0 / 4.0 * self.M200 * om.value / (jnp.pi * Delta.value)) ** (
+        return (3.0 * self.M200 * om.value / (4 * jnp.pi * Delta.value)) ** (
             1.0 / 3.0
         ) / self.c
 
@@ -77,7 +77,7 @@ def _rho_NFW(r, rho0, rs):
 def core_nfw_tides_rho(r, params):
     """Density of the cNFWt profile"""
     M200 = params.M200
-    c = params.c
+    g = params.g
     rc = params.rc
     n = params.n
     rt = params.rt
@@ -90,10 +90,10 @@ def core_nfw_tides_rho(r, params):
         [r < rt],
         [
             lambda r: _rho_cNFW(
-                r, n, rc, _rho_NFW(r, rho0, rs), _M_NFW(r, M200, c, rs)
+                r, n, rc, _rho_NFW(r, rho0, rs), _M_NFW(r, M200, g, rs)
             ),
             lambda r: _rho_cNFW(
-                rt, n, rc, _rho_NFW(rt, rho0, rs), _M_NFW(rt, M200, c, rs)
+                rt, n, rc, _rho_NFW(rt, rho0, rs), _M_NFW(rt, M200, g, rs)
             )
             * (r / rt) ** (-delta),
         ],
