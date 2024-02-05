@@ -13,6 +13,8 @@ from .potential import potential
 from .utils import quad
 from .io_utils import hash_to_int32
 
+import matplotlib.pyplot as plt
+
 
 class eigenstate_library(NamedTuple):
     """
@@ -23,13 +25,13 @@ class eigenstate_library(NamedTuple):
     E_j: ArrayLike
     l_of_j: ArrayLike
     n_of_j: ArrayLike
+    name: int
 
     @classmethod
     def compute_name(cls, potential_params, r_ta, N):
         combined = hashlib.sha256()
         combined.update(hashlib.md5(jnp.asarray(r_ta)).digest())
         combined.update(hashlib.md5(jnp.asarray(N)).digest())
-        combined.update(hashlib.md5(f"{potential_params.name}")).digest()
         combined.update(hashlib.md5(jnp.asarray(potential_params.name)).digest())
         return hash_to_int32(combined.hexdigest())
 
@@ -79,7 +81,7 @@ def wkb_estimate_of_rmax(r_ta, l, potential_params):
         return (
             jnp.sqrt(2)
             * quad(lambda r: jnp.sqrt(r_classical_Veff(r)), r_lower, r_upper)
-            - 20
+            - 30
         )
 
     # Determine radius according to WKB decay in forbidden region
@@ -93,16 +95,12 @@ def wkb_estimate_of_rmax(r_ta, l, potential_params):
     return Rmax
 
 
-def check_mode_heath(E_n, E_min, E_max):
-    if E_n.shape[0] == 0:
-        raise Exception(f"No modes inside [{E_min:.2f}, {E_max:2f}]")
-    if np.any(E_n.imag > 1e-10 * E_n.real):
-        raise Exception("Eigenvalue with significant imaginary part found")
+def check_mode_heath(E_n):
     if np.any(np.unique(E_n, return_counts=True)[1] > 1):
         raise Exception("Degeneracy detected. This is impossible in 1D.")
 
 
-def init_eigenstate_library(potential_params, r_ta, N=4096):
+def init_eigenstate_library(potential_params, r_ta, N):
     V = jax.vmap(potential, in_axes=(0, None))
 
     # Discetized radial eigenstate
@@ -139,6 +137,7 @@ def init_eigenstate_library(potential_params, r_ta, N=4096):
         E_n, u_n = eigh_tridiagonal(
             H_diag, H_off_diag, select="v", select_range=(E_min_l.item(), E_max.item())
         )
+        check_mode_heath(E_n)
 
         R_n = u_n / (r[:, np.newaxis] * jnp.sqrt(dr))
         R_j_r.append(jnp.asarray(R_n.T))
@@ -154,12 +153,13 @@ def init_eigenstate_library(potential_params, r_ta, N=4096):
     n_of_j = jnp.concatenate(n_of_j)
 
     R_j_params = init_mult_spline_params(r[0], dr, R_j_r)
+    result_shape = jax.ShapeDtypeStruct((), jnp.int32)
+    name = jax.pure_callback(
+        eigenstate_library.compute_name, result_shape, potential_params, r_ta, N
+    )
 
     return eigenstate_library(
-        R_j_params=R_j_params,
-        E_j=E_j,
-        l_of_j=l_of_j,
-        n_of_j=n_of_j,
+        R_j_params=R_j_params, E_j=E_j, l_of_j=l_of_j, n_of_j=n_of_j, name=name
     )
 
 
