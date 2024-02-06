@@ -1,133 +1,108 @@
-from collections import namedtuple
+from typing import NamedTuple
+import hashlib
 
-from jax import vmap, random, lax, jit, grad
+import jax
+from jax.typing import ArrayLike
 import jax.numpy as jnp
+from jaxopt import GradientDescent, LBFGS
 
-from jaxopt import LBFGS
-
-from .interpolate import eval_interp1d
-
-wavefunction_params = namedtuple(
-    "wavefunction_params",
-    ["M_fit", "r_fit", "aj_2", "eigenstate_library"],
-)
-
-eval_mult_states = vmap(eval_interp1d, in_axes=(None, 0))
-eval_mult_states_mult_x = vmap(eval_mult_states, in_axes=(0, None))
+from .profiles import rho as rho, total_mass
+from .chebyshev import clenshaw_curtis_weights, chebyshev_pts
+from .eigenstates import eval_eigenstate
+from .io_utils import hash_to_int32
 
 
-def enclosed_mass_from_gaussian_noise_model(key, mass, N, r_fit, method="equal_mass"):
-    if method == "equal_mass":
+class wavefunction_params(NamedTuple):
+    eigenstate_library: NamedTuple
+    aj_2: ArrayLike
+    total_mass: float
+    r_fit: float
+    distance: float
+    name: int
 
-        @jit
-        def density(rkpc):
-            return grad(lambda r: mass(r)[0])(rkpc) / (4 * jnp.pi * rkpc**2)
+    @classmethod
+    def compute_name(cls, eigenstate_library, density_params, r_fit):
+        combined = hashlib.sha256()
+        combined.update(hashlib.md5(jnp.asarray(eigenstate_library.name)).digest())
+        combined.update(hashlib.md5(jnp.asarray(density_params.name)).digest())
+        combined.update(hashlib.md5(jnp.asarray(r_fit)).digest())
+        return hash_to_int32(combined.hexdigest())
 
-        # Find equal mass shell grid
-        mass_inside_each_shell = mass(r_fit)[0] / N
-
-        def next_point(r_ip1, x):
-            r_i = r_ip1 - mass_inside_each_shell / (
-                4 * jnp.pi * r_ip1**2 * density(r_ip1)
-            )
-            return r_i, r_i
-
-        _, rkpc = lax.scan(
-            next_point,
-            r_fit,
-            None,
-            length=N,
-            reverse=True,
+    def __repr__(self):
+        return (
+            f"wavefunction_params:"
+            f"\n\tname={self.name},"
+            f"\n\teigenstate_library={self.eigenstate_library.name},"
+            f"\n\taj_2={[jnp.min(self.aj_2),jnp.max(self.aj_2)]},"
+            f"\n\ttotal_mass={self.total_mass},"
+            f"\n\tdistance={self.distance},"
         )
-        rkpc = rkpc[rkpc > 0]
-        N_fit = rkpc.shape[0]
-    else:
-        N_fit = N
-        rkpc = jnp.logspace(jnp.log10(mass.rmin), jnp.log10(r_fit), N_fit)
 
-    M_r_mean, M_r_sigma = mass(rkpc)
-    M_r_realisation = M_r_mean + random.normal(key, shape=(N_fit,)) * M_r_sigma
-    return rkpc, M_r_realisation, M_r_sigma
+
+eval_eigenstates = jax.vmap(eval_eigenstate, in_axes=(None, 0))
 
 
 def init_wavefunction_params_least_square(
-    eigenstate_library, mass, N_fit, r_fit, seed, verbose=True
+    eigenstate_library, density_params, r_fit, verbose=True
 ):
-    key_sampling = random.PRNGKey(seed)
-    rkpc, M_r_realisation, M_r_sigma = enclosed_mass_from_gaussian_noise_model(
-        key_sampling, mass, N_fit, r_fit, method=None
-    )
-    N_fit = rkpc.shape[0]
+    eval_eigenstates_mult_r = jax.vmap(eval_eigenstates, in_axes=(0, None))
+    rho_in = jax.vmap(rho, in_axes=(0, None))
 
-    M_fit = mass(r_fit)[0]
-
-    M_r_realisation = M_fit - M_r_realisation
-    M_r_psi = M_psi(
-        rkpc,
-        wavefunction_params(
-            M_fit=M_fit,
-            eigenstate_library=eigenstate_library,
-            r_fit=rkpc,
-            aj_2=jnp.eye(eigenstate_library.J),
-        ),
+    N = 512
+    weights = clenshaw_curtis_weights(N)
+    r = (chebyshev_pts(N) + 1) * r_fit
+    rho_in_r = jnp.nan_to_num(rho_in(r, density_params), nan=jnp.inf)
+    R_j2_r = (
+        total_mass(density_params)
+        * (2 * eigenstate_library.l_of_j + 1)[jnp.newaxis, :]
+        / (4 * jnp.pi)
+        * eval_eigenstates_mult_r(r, eigenstate_library.R_j_params) ** 2
     )
 
-    def least_square_error(aj_2):
-        return jnp.mean(
-            1 / (2 * M_r_sigma**2) * (M_r_realisation - M_r_psi @ aj_2) ** 2
-        )
+    def square_distance(log_aj2):
+        return weights @ (R_j2_r @ jnp.exp(log_aj2) / rho_in_r - 1) ** 2
 
-    optimizer = LBFGS(fun=least_square_error, maxiter=1000, tol=1e-7)
-    res = optimizer.run(jnp.ones_like(eigenstate_library.E_j))
+    log_aj2 = jnp.log(jnp.ones(eigenstate_library.J) / eigenstate_library.J)
+
+    gd = GradientDescent(fun=square_distance, maxiter=1000, tol=1e-7)
+    lbfgs = LBFGS(fun=square_distance, maxiter=100000, tol=1e-7)
+    res = gd.run(log_aj2)
     if verbose:
         print(
-            f"Optimization stopped after {res.state.iter_num} "
+            f"GradientDescent stopped after {res.state.iter_num} "
             f"iterations (error = {res.state.error:.8f})"
         )
-    aj_2 = res.params
-
-    params = wavefunction_params(
-        M_fit=M_fit,
-        eigenstate_library=eigenstate_library,
-        r_fit=rkpc,
-        aj_2=aj_2,
-    )
+    res = lbfgs.run(res.params)
     if verbose:
-        return params, {
-            "rkpc": rkpc,
-            "M_r_realisation": M_r_realisation,
-            "M_r_sigma": M_r_sigma,
-        }
-    else:
-        return params
+        print(
+            f"LBFGS stopped after {res.state.iter_num} "
+            f"iterations (error = {res.state.error:.8f})"
+        )
+
+    result_shape = jax.ShapeDtypeStruct((), jnp.int32)
+    name = jax.pure_callback(
+        eigenstate_library.compute_name,
+        result_shape,
+        eigenstate_library,
+        density_params,
+        r_fit,
+    )
+    params = wavefunction_params(
+        eigenstate_library=eigenstate_library,
+        aj_2=jnp.exp(res.params),
+        r_fit=r_fit,
+        total_mass=total_mass(density_params),
+        distance=square_distance(res.params),
+        name=name,
+    )
+    return params
 
 
-def rho(rkpc, wavefunction_params):
-    r_j2_r = (
-        (2 * wavefunction_params.eigenstate_library.l_of_j[jnp.newaxis, :] + 1)
-        * wavefunction_params.enclosed_mass
+def rho_psi(r, wavefunction_params):
+    R_j2_r = (
+        (2 * wavefunction_params.eigenstate_library.l_of_j + 1)
+        * wavefunction_params.total_mass
         / (4 * jnp.pi)
-        * eval_mult_states_mult_x(
-            rkpc, wavefunction_params.eigenstate_library.r_j_params
-        )
-        ** 2
+        * eval_eigenstates(r, wavefunction_params.eigenstate_library.R_j_params) ** 2
     )
-    return r_j2_r @ wavefunction_params.aj_2
-
-
-def M_psi(rkpc, wavefunction_params):
-    dr = jnp.diff(rkpc)
-    M_psi_integrand = (
-        (2 * wavefunction_params.eigenstate_library.l_of_j[jnp.newaxis, :] + 1)
-        * wavefunction_params.M_fit
-        * rkpc[:, jnp.newaxis] ** 2
-        * eval_mult_states_mult_x(
-            rkpc, wavefunction_params.eigenstate_library.R_j_params
-        )
-        ** 2
-    )
-    summand = 1 / 2 * (M_psi_integrand[1:] + M_psi_integrand[:-1]) * dr[:, jnp.newaxis]
-    M = jnp.cumsum(summand[::-1], axis=0)[::-1]
-    std = jnp.std(M, axis=0, keepdims=True)
-    M_r_psi = jnp.pad(M / std, ((0, 1), (0, 0)))
-    return M_r_psi @ wavefunction_params.aj_2
+    return R_j2_r @ wavefunction_params.aj_2
