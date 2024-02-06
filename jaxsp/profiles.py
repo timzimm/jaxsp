@@ -52,14 +52,14 @@ class core_NFW_tides_params(NamedTuple):
         return (
             f"core_NFW_tides_params:\n\tM200={self.M200},"
             f"\n\tc={self.c},"
-            f"\n\tn={self.n})"
-            f"\n\trc={self.rc})"
-            f"\n\trt={self.rt})"
-            f"\n\tdelta={self.delta})"
+            f"\n\tn={self.n},"
+            f"\n\trc={self.rc},"
+            f"\n\trt={self.rt},"
+            f"\n\tdelta={self.delta},"
             f"\n\tDerived:"
-            f"\n\trs={self.rs})"
-            f"\n\tg={self.g})"
-            f"\n\trho0={self.rho0})"
+            f"\n\trs={self.rs},"
+            f"\n\tg={self.g},"
+            f"\n\trho0={self.rho0},"
         )
 
 

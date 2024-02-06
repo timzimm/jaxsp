@@ -46,7 +46,15 @@ class eigenstate_library(NamedTuple):
         return self.E_j.shape[0]
 
     def __repr__(self):
-        return f"eigenstate_library:\n\tJ={len(self.l_of_j)},\n\tl_of_j={self.l_of_j},\n\tn_of_j={self.n_of_j})"
+        return (
+            f"wavefunction_params:"
+            f"\n\tname={self.name},"
+            f"\n\tJ={self.J},"
+            f"\n\tlmax={jnp.max(self.l_of_j)},"
+            f"\n\tnmax={jnp.max(self.n_of_j)},"
+            f"\n\tEmin={jnp.min(self.E_j)},"
+            f"\n\tEmax={jnp.max(self.E_j)},"
+        )
 
 
 init_mult_spline_params = jax.vmap(
