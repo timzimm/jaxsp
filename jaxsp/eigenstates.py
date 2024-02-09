@@ -13,7 +13,9 @@ from .potential import potential
 from .utils import quad
 from .io_utils import hash_to_int32
 
-import matplotlib.pyplot as plt
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class eigenstate_library(NamedTuple):
@@ -21,11 +23,12 @@ class eigenstate_library(NamedTuple):
     Parameters specifying the eigenstate_library
     """
 
+    name: int
+    potential_params: int
     R_j_params: NamedTuple
     E_j: ArrayLike
     l_of_j: ArrayLike
     n_of_j: ArrayLike
-    name: int
 
     @classmethod
     def compute_name(cls, potential_params, r_ta, N):
@@ -49,6 +52,7 @@ class eigenstate_library(NamedTuple):
         return (
             f"wavefunction_params:"
             f"\n\tname={self.name},"
+            f"\n\tpotential_params={self.potential_params},"
             f"\n\tJ={self.J},"
             f"\n\tlmax={jnp.max(self.l_of_j)},"
             f"\n\tnmax={jnp.max(self.n_of_j)},"
@@ -98,6 +102,9 @@ def wkb_estimate_of_rmax(r_ta, l, potential_params):
         lower=r_ta,
         upper=10 * r_ta,
     )
+    # logger.info(
+    #     f"{potential_params.name} {wkb_condition_Veff(r_ta, r_ta)}, {wkb_condition_Veff(r_ta, 10 * r_ta)}"
+    # )
     Rmax = bisec.run().params
 
     return Rmax
@@ -167,7 +174,12 @@ def init_eigenstate_library(potential_params, r_ta, N):
     )
 
     return eigenstate_library(
-        R_j_params=R_j_params, E_j=E_j, l_of_j=l_of_j, n_of_j=n_of_j, name=name
+        R_j_params=R_j_params,
+        E_j=E_j,
+        l_of_j=l_of_j,
+        n_of_j=n_of_j,
+        name=name,
+        potential_params=potential_params.name,
     )
 
 
