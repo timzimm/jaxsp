@@ -6,12 +6,13 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 from scipy.linalg import eigh_tridiagonal
-from jaxopt import Bisection
+from jaxopt import Bisection, Broyden, LBFGSB, ProjectedGradient
+from jaxopt.projection import projection_box
 
 from .interpolate import init_1d_interpolation_params, eval_interp1d
 from .potential import potential
 from .utils import quad
-from .io_utils import hash_to_int32
+from .io_utils import hash_to_int64
 
 import logging
 
@@ -36,7 +37,7 @@ class eigenstate_library(NamedTuple):
         combined.update(hashlib.md5(jnp.asarray(r_ta)).digest())
         combined.update(hashlib.md5(jnp.asarray(N)).digest())
         combined.update(hashlib.md5(jnp.asarray(potential_params.name)).digest())
-        return hash_to_int32(combined.hexdigest())
+        return hash_to_int64(combined.hexdigest())
 
     def j_of_nl(self, n, l):
         n = int(n)
@@ -70,20 +71,33 @@ def V_effective(r, l, potential_params):
     return 0.5 * l * (l + 1) / (1e-10 + r**2) + potential(r, potential_params)
 
 
+# def minimum_of_effective_potential(r_ta, l, potential_params):
+#     obj = jax.grad(lambda r: V_effective(r, l, potential_params))
+#     bisec = Bisection(
+#         optimality_fun=obj,
+#         lower=1e-10,
+#         upper=r_ta - 1e-10,
+#         tol=1e-3,
+#         check_bracket=False,
+#     )
+#     rmin = bisec.run().params
+#     return rmin
+
+
+@jax.jit
 def minimum_of_effective_potential(r_ta, l, potential_params):
-    if l == 0:
-        return 0.0
-    obj = jax.grad(lambda r: V_effective(r, l, potential_params))
-    pg = Bisection(
-        optimality_fun=obj,
-        lower=1e-10,
-        upper=r_ta - 1e-10,
-        tol=1e-3,
+    pg = ProjectedGradient(
+        fun=lambda logr: V_effective(jnp.exp(logr), l, potential_params),
+        projection=projection_box,
+        verbose=False,
     )
-    rmin = pg.run().params
-    return rmin
+    logrmin = pg.run(
+        jnp.log(r_ta / 2), hyperparams_proj=(jnp.log(1e-10), jnp.log(r_ta - 1e-10))
+    ).params
+    return jnp.exp(logrmin)
 
 
+@jax.jit
 def wkb_estimate_of_rmax(r_ta, l, potential_params):
     @jax.vmap
     def r_classical_Veff(r):
@@ -93,30 +107,30 @@ def wkb_estimate_of_rmax(r_ta, l, potential_params):
         return (
             jnp.sqrt(2)
             * quad(lambda r: jnp.sqrt(r_classical_Veff(r)), r_lower, r_upper)
-            - 30
+            - 20
         )
 
     # Determine radius according to WKB decay in forbidden region
-    bisec = Bisection(
-        optimality_fun=lambda r: wkb_condition_Veff(r_ta, r),
-        lower=r_ta,
-        upper=10 * r_ta,
+    bisec = Broyden(
+        fun=lambda logr: wkb_condition_Veff(r_ta, jnp.exp(logr)),
     )
-    # logger.info(
-    #     f"{potential_params.name} {wkb_condition_Veff(r_ta, r_ta)}, {wkb_condition_Veff(r_ta, 10 * r_ta)}"
-    # )
-    Rmax = bisec.run().params
+    logrmax = bisec.run(jnp.array(jnp.log(r_ta))).params
 
-    return Rmax
+    return jnp.exp(logrmax)
 
 
 def check_mode_heath(E_n):
     if np.any(np.unique(E_n, return_counts=True)[1] > 1):
         raise Exception("Degeneracy detected. This is impossible in 1D.")
+    # Addtional tests go here (e.g. number of roots = n?)
 
 
 def init_eigenstate_library(potential_params, r_ta, N):
     V = jax.vmap(potential, in_axes=(0, None))
+    result_shape = jax.ShapeDtypeStruct((), jnp.int64)
+    name = jax.pure_callback(
+        eigenstate_library.compute_name, result_shape, potential_params, r_ta, N
+    )
 
     # Discetized radial eigenstate
     R_j_r = []
@@ -128,13 +142,16 @@ def init_eigenstate_library(potential_params, r_ta, N):
 
     lmax = 0
     E_max = potential(r_ta, potential_params)
-    while True:
-        rmin = minimum_of_effective_potential(r_ta, lmax, potential_params)
-        E_min_l = V_effective(rmin, lmax, potential_params)
-        if E_min_l > E_max:
-            break
-        lmax += 1
-
+    lmax = jax.lax.while_loop(
+        lambda l: V_effective(
+            minimum_of_effective_potential(r_ta, l, potential_params),
+            l,
+            potential_params,
+        )
+        < E_max,
+        lambda l: l + 1,
+        1,
+    )
     for l in range(lmax):
         rmin = minimum_of_effective_potential(r_ta, l, potential_params)
         E_min_l = V_effective(rmin, l, potential_params)
@@ -142,6 +159,7 @@ def init_eigenstate_library(potential_params, r_ta, N):
         rmax = wkb_estimate_of_rmax(r_ta, l, potential_params)
         dr = rmax / N
         r = dr * jnp.arange(1, N)
+        print(dr, rmin, rmax, r_ta)
 
         H_off_diag = -1 / (2 * dr**2) * jnp.ones(r.shape[0] - 1)
         H_diag = (
@@ -150,28 +168,28 @@ def init_eigenstate_library(potential_params, r_ta, N):
             + V(r, potential_params)
         )
         E_n, u_n = eigh_tridiagonal(
-            H_diag, H_off_diag, select="v", select_range=(E_min_l.item(), E_max.item())
+            H_diag,
+            H_off_diag,
+            select="v",
+            select_range=(E_min_l.item(), E_max.item()),
         )
-        check_mode_heath(E_n)
 
-        R_n = u_n / (r[:, np.newaxis] * jnp.sqrt(dr))
-        R_j_r.append(jnp.asarray(R_n.T))
+        check_mode_heath(E_n)
+        n = E_n.shape[0]
+
+        R_n = jnp.transpose(u_n / (r[:, np.newaxis] * jnp.sqrt(dr)))
+        R_j_r.append(jnp.asarray(R_n))
         E_j.append(jnp.asarray(E_n))
-        l_of_j.append(l * jnp.ones_like(E_n))
-        n_of_j.append(jnp.arange(E_n.shape[0]))
+        l_of_j.append(l * jnp.ones(n, dtype=int))
+        n_of_j.append(jnp.arange(n, dtype=int))
 
         l += 1
 
     R_j_r = jnp.concatenate(R_j_r)
+    R_j_params = init_mult_spline_params(r[0], dr, R_j_r)
     E_j = jnp.concatenate(E_j)
     l_of_j = jnp.concatenate(l_of_j)
     n_of_j = jnp.concatenate(n_of_j)
-
-    R_j_params = init_mult_spline_params(r[0], dr, R_j_r)
-    result_shape = jax.ShapeDtypeStruct((), jnp.int32)
-    name = jax.pure_callback(
-        eigenstate_library.compute_name, result_shape, potential_params, r_ta, N
-    )
 
     return eigenstate_library(
         R_j_params=R_j_params,
