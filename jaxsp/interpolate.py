@@ -1,4 +1,5 @@
 from typing import NamedTuple
+from jax.typing import ArrayLike
 
 import jax.numpy as jnp
 from jax.lax import dynamic_slice
@@ -6,15 +7,26 @@ from jax.lax import dynamic_slice
 
 class interpolation_params(NamedTuple):
     """
-    Parameters specifying a Taylor interpolant.
+    Parameters specifying an interpolant based on local 4th order Taylor
+    expansion on a uniform grid.
     This is a reduced version of dbstein/fast_interp
     """
 
+    f: ArrayLike
     a: float
     dx: float
-    f: float
     lb: float
     ub: float
+
+
+class piecewise_constant_interpolation_params(NamedTuple):
+    """
+    Parameters specifying a piecewise constant interpolant on a uniform
+    grid.
+    """
+
+    f_i: ArrayLike
+    x_i: ArrayLike
 
 
 def _extrapolate1d_x(f):
@@ -54,3 +66,14 @@ def eval_interp1d(x, interpolation_params):
     ratx = x / interpolation_params.dx - (ix + 0.5)
     asx = A + ratx * (B + ratx * (C + ratx * D))
     return jnp.dot(dynamic_slice(interpolation_params.f, ix, (4,)), asx)
+
+
+def eval_piecewise_constant_interpolation(x, piecewise_constant_interpolation_params):
+    params = piecewise_constant_interpolation_params
+    x = jnp.clip(
+        x,
+        params.x_i[0],
+        params.x_i[-1],
+    )
+    i = jnp.searchsorted(params.x_i, x, side="right")
+    return params.f_i[i - 1]

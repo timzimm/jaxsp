@@ -1,0 +1,45 @@
+general:
+    # Path where model parameters will be saved
+    cache: ../../data/cache/0001
+
+uldm:
+    # ULDM mass [1e-22 eV]
+    m22: 1.0
+
+density:
+    load_if_cached: True
+    overwrite: False
+    # Path to cNFWt gravsphere chains
+    gravsphere_chains: ../../data/coreNFWtides_parameters/output_M200c200_chain_LeoII.txt
+    # Number of chain samples to process. Samples are split across all MPI processes
+    samples: 4
+
+potential:
+    load_if_cached: True
+    overwrite: False
+    # Number of simultaneously constructed potentials. Potentials follow from vmapping
+    # [ MEMORY > O(batch_size) ]
+    batch_size: 128
+    # Length scale down to which potential is computed via Poisson [kpc].
+    # For r < r_min, a constant interpolation is used.
+    r_min: 2e-5
+
+
+eigenstate_library:
+    load_if_cached: True
+    overwrite: False
+    # Number of sectors on which Schroedinger eq. is solved [ MEMORY ~ O(N) ]
+    N: 512
+    # Number of simultaneously constructed eigenmodes. Eigenmodes follow from
+    # a sequential map over vmap [ MEMORY > O(batch_size) ]
+    batch_size: 16
+    # Length scale at which eigenmodes satisfy Dirichlet conditions [kpc]
+    # Setting r_min too big deteriorates the mode quality in the R_nl ~ r^l regime.
+    # Setting r_min too small deteriorates the mode quality in the far field regime.
+    r_min: 2e-5
+
+wave_function:
+    load_if_cached: True
+    overwrite: False
+    # Lower integration limit in divergence integral [kpc]
+    r_min: 2e-5

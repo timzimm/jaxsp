@@ -3,10 +3,48 @@ import hashlib
 
 import jax
 import jax.numpy as jnp
+from flax.struct import dataclass
 from jaxopt import Broyden
 
 from .constants import Delta, om
-from .io_utils import hash_to_int32
+
+from .io_utils import hash_to_int64
+
+# from .model import Model
+
+
+# @dataclass
+# class core_NFW_tides_params(Model):
+#     """
+#     Parameters specifying the cored-NFW-tides (cNFWt) density model introduced
+#     in arxiv:1805.06934. This is the internal dark matter halo model used by GravSphere
+#     """
+
+#     M200: float
+#     c: float
+#     n: float
+#     rc: float
+#     rt: float
+#     delta: float
+
+#     @classmethod
+#     def init(cls, *args):
+#         name = cls.compute_name(*args)
+#         return cls(name, *args)
+
+#     @property
+#     def rs(self):
+#         return (3.0 * self.M200 * om.value / (4 * jnp.pi * Delta.value)) ** (
+#             1.0 / 3.0
+#         ) / self.c
+
+#     @property
+#     def g(self):
+#         return 1.0 / (jnp.log(1.0 + self.c) - self.c / (1.0 + self.c))
+
+#     @property
+#     def rho0(self):
+#         return 1.0 / om.value * Delta.value * self.c**3.0 * self.g / 3.0
 
 
 class core_NFW_tides_params(NamedTuple):
@@ -46,17 +84,19 @@ class core_NFW_tides_params(NamedTuple):
         combined.update(hashlib.md5(jnp.array(sample[..., 3])).digest())
         combined.update(hashlib.md5(jnp.array(sample[..., 4])).digest())
         combined.update(hashlib.md5(jnp.array(sample[..., 5])).digest())
-        return hash_to_int32(combined.hexdigest())
+        return hash_to_int64(combined.hexdigest())
 
     def __repr__(self):
         return (
-            f"core_NFW_tides_params:\n\tM200={self.M200},"
+            f"core_NFW_tides_params:"
+            f"\n\tname={self.name},"
+            f"\n\tM200={self.M200},"
             f"\n\tc={self.c},"
             f"\n\tn={self.n},"
             f"\n\trc={self.rc},"
             f"\n\trt={self.rt},"
             f"\n\tdelta={self.delta},"
-            f"\n\tDerived:"
+            f"\n    Derived:"
             f"\n\trs={self.rs},"
             f"\n\tg={self.g},"
             f"\n\trho0={self.rho0},"
@@ -67,7 +107,7 @@ def init_core_NFW_tides_params_from_sample(sample):
     """
     Initialise cNFWt model from GravSphere chain sample
     """
-    result_shape = jax.ShapeDtypeStruct((), jnp.int32)
+    result_shape = jax.ShapeDtypeStruct((), jnp.int64)
     name = jax.pure_callback(core_NFW_tides_params.compute_name, result_shape, sample)
     return core_NFW_tides_params(
         M200=sample[0],
@@ -158,9 +198,13 @@ def core_nfw_tides_M(r, params):
     )
 
 
+enclosed_mass = core_nfw_tides_M
+rho = core_nfw_tides_rho
+
+
 def total_mass(params):
     """Total mass of the cNFWt profile"""
-    return core_nfw_tides_M(jnp.inf, params)
+    return enclosed_mass(jnp.inf, params)
 
 
 def enclosing_radius(mass_fraction, params):
@@ -168,12 +212,12 @@ def enclosing_radius(mass_fraction, params):
     M = total_mass(params)
 
     @jax.jit
-    def objective(r):
-        return core_nfw_tides_M(r, params) / M - mass_fraction
+    def objective(logr):
+        return enclosed_mass(jnp.exp(logr), params) / M - mass_fraction
 
     broyden = Broyden(fun=objective)
-    return broyden.run(jnp.array(1.0)).params
+    return jnp.exp(broyden.run(jnp.array(0.0)).params)
 
 
-enclosed_mass = core_nfw_tides_M
-rho = core_nfw_tides_rho
+def circular_velocity(r, params):
+    return jnp.sqrt(1.0 / (4 * jnp.pi) * enclosed_mass(r, params) / r)
