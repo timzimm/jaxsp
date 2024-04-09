@@ -31,10 +31,10 @@ The result is an effective, and efficient surrogate model for the ULDM wave func
 for spherical symmetric systems. We refer to [our paper](#citing-jaxsp)
 for an in depth exposition of jaxsp's underlying assumptions, physics and application to DM modelling in dwarf spheroidal galaxies.
 
-jaxsp is built on [jax](https://github.com/google/jax) such that compuation of observables 
-involving the wave function.
-(including its derivatives via `jax.grad`) are simple (thanks to `jax.vmap`) and 
-efficient (thanks to `jax.jit`) to implement.
+jaxsp is built on [jax](https://github.com/google/jax). Any computation 
+that involves the constructed wave function is therefore differentiable
+(via `jax.grad`), simple (thanks to `jax.vmap`) and efficient (with `jax.jit`) 
+to implement.
 
 **This is a research project. Expect bugs, report bugs, fix more bugs than you
 create.**
