@@ -3,7 +3,7 @@
 src="https://github.com/james-alvey-42/jaxsp/blob/67be7bc188841bdf2bed02e72659245f0a2b2a1b/images/logo.png" alt="logo" width="150"></img>
 </div>
 
-# jaxsp: A Semi Analytical Model for ULDM in Spherical Systems
+## jaxsp: A Semi Analytical Model for ULDM in Spherical Systems
 [**What is Fuzzylli**](#what-is-fuzzylli)
 | [**Installation**](#installation)
 | [**Example**](#example)
