@@ -10,7 +10,7 @@ src="https://github.com/james-alvey-42/jaxsp/blob/67be7bc188841bdf2bed02e7265924
 | [**Citing Fuzzylli**](#citing-fuzzylli)
 
 ## What is fuzzylli
-TODO
+TODO: Add some description + most relevant refs.
 
 <!-- [1] [Yavetz et al. (2021)](https://arxiv.org/abs/2109.06125): -->
 <!-- _Construction of Wave Dark Matter Halos: Numerical Algorithm and Analytical Constraints_ -->
@@ -22,9 +22,8 @@ TODO
 <!-- _Don't cross the streams: caustics from fuzzy dark matter_ -->
 
 <figure>
-  <img src="https://github.com/timzimm/fuzzylli/blob/0d792d8d018cb6a44108581965902cfc148f8aeb/images/comparison.png" alt="" width="750" align="center">
-  <figcaption align="center">Comparison between fuzzylli and AXIREPO, a state of the
-  integrator for the full-fledged Schrödinger-Poisson equation</figcaption>
+  <img src="https://github.com/james-alvey-42/jaxsp/blob/c23a854ffbaeaa7e81a07ff5d860efd0b212f534/images/leoII.png" alt="" width="750" align="center">
+  <figcaption align="center">Add some caption text</figcaption>
 </figure>
 <br/><br/>
 
@@ -36,12 +35,6 @@ fuzzylli is built on [jax](https://github.com/google/jax) such that compuation o
 involving the wave function.
 (including its derivatives via `jax.grad`) are simple (thanks to `jax.vmap`) and 
 efficient (thanks to `jax.jit`) to implement.
-
-<figure>
-  <img src="https://github.com/timzimm/fuzzylli/blob/2aecf2029754e7ef9d86a9b11a99cb1d6d2603c6/images/crosssections.png" alt="" width="750" align="center">
-  <figcaption align="center">Filament cross sections as a function of axion/FDM mass</figcaption>
-</figure>
-<br/><br/>
 
 **This is a research project. Expect bugs, report bugs, fix more bugs than you
 create.**
