@@ -1,6 +1,6 @@
 <div align="center">
 <img
-src="https://github.com/timzimm/fuzzylli/blob/3e972ebae28f78273f88248e488dea43f7fcc31a/images/logo.png" alt="logo" width="150"></img>
+src="https://github.com/james-alvey-42/jaxsp/blob/67be7bc188841bdf2bed02e72659245f0a2b2a1b/images/logo.png" alt="logo" width="150"></img>
 </div>
 
 # jaxsp: A Semianalytical Model for ULDM in Dwarfs
@@ -64,5 +64,5 @@ TODO
 ## Acknowledgement
 <div align="center">
 <img
-src="https://github.com/timzimm/fuzzylli/blob/820bc2c270556f4b9208f09224c53764eb6651d1/images/eu_acknowledgement_compsci_3.png" alt="logo"></img>
+src="https://github.com/james-alvey-42/jaxsp/blob/67be7bc188841bdf2bed02e72659245f0a2b2a1b/images/eu_acknowledgement_compsci_3.png" alt="logo"></img>
 </div>
