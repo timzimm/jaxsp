@@ -22,7 +22,7 @@ TODO: Add some description + most relevant refs.
 <!-- _Don't cross the streams: caustics from fuzzy dark matter_ -->
 
 <figure>
-  <img src="https://github.com/james-alvey-42/jaxsp/blob/c23a854ffbaeaa7e81a07ff5d860efd0b212f534/images/leoII.png" alt="" width="750" align="center">
+  <img src="https://github.com/james-alvey-42/jaxsp/blob/c23a854ffbaeaa7e81a07ff5d860efd0b212f534/images/leoII.png" alt="" width="600" align="center">
   <figcaption align="center">Add some caption text</figcaption>
 </figure>
 <br/><br/>
