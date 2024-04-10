@@ -3,8 +3,9 @@ import hashlib
 
 import jax
 import jax.numpy as jnp
-from flax.struct import dataclass
-from jaxopt import Broyden
+
+# from flax.struct import dataclass
+from jaxopt import Broyden, Bisection
 
 from .constants import Delta, om
 
@@ -215,8 +216,13 @@ def enclosing_radius(mass_fraction, params):
     def objective(logr):
         return enclosed_mass(jnp.exp(logr), params) / M - mass_fraction
 
-    broyden = Broyden(fun=objective)
-    return jnp.exp(broyden.run(jnp.array(0.0)).params)
+    bisec = Bisection(
+        optimality_fun=objective,
+        lower=-10,
+        upper=10,
+        check_bracket=False,
+    )
+    return jnp.exp(bisec.run().params)
 
 
 def circular_velocity(r, params):

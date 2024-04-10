@@ -8,7 +8,13 @@ import ruamel.yaml
 import jax.numpy as jnp
 import mgzip
 
+# import orbax.checkpoint as ocp
+import shutil
+
 # logger = logging.getLogger(__name__)
+
+
+# checkpointer = ocp.AsyncCheckpointer(ocp.PyTreeCheckpointHandler(), timeout_secs=50)
 
 
 def name_of_stacked_names(names):
@@ -19,21 +25,22 @@ def name_of_stacked_names(names):
 
 
 def save_model(enforce_save, cache_dir, name, model):
-    if enforce_save:
-        # logger.info(f"Enforced save of model {name}...")
-        with mgzip.open(f"{cache_dir}/{name}", mode="wb") as file:
-            pickle.dump(model, file)
-    else:
-        if os.path.exists(f"{cache_dir}/{name}"):
-            # logger.info(f"Model {name} already saved...continue")
-            return
-        with mgzip.open(f"{cache_dir}/{name}", mode="wb") as file:
-            # logger.info(f"Save model {name}...")
-            pickle.dump(model, file)
+    path = f"{cache_dir}/{name}"
+    if os.path.exists(path) and not enforce_save:
+        return
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    # save_args = ocp.args.StandardSave(model)
+    # checkpointer.save(path, model, save_args=save_args)
+    with mgzip.open(path, mode="wb") as file:
+        pickle.dump(model, file)
 
 
 def load_model(cache_dir, name):
-    if os.path.exists(f"{cache_dir}/{name}"):
+    path = f"{cache_dir}/{name}"
+    if os.path.exists(path):
+        # checkpointer.restore(path)
+        # jax.tree_util.tree_map
         # logger.info(f"Model already computed. Load {name}...")
         with mgzip.open(f"{cache_dir}/{name}", mode="rb") as file:
             model = pickle.load(file)

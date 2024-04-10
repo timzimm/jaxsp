@@ -35,16 +35,7 @@ def map_vmap(
     *,
     batch_size: int,
 ) -> F:
-    """jax.vmap, but looping when the batch dimension exceeds batch_size.
-
-    Wrapping f with jax.remat() is recommended if you want to use batch_vmap
-    inside gradient calculations. Otherwise, you won't realize any memory savings
-    because JAX will save all the forward activations.
-
-    If your code looks like value_and_grad(mean(vmap(...))) then you probably want
-    to use microbatching instead, which is more efficient because you don't need
-    to use remat. See google3/learning/deepmind/jax/microbatching/
-    """
+    """jax.vmap, but looping when the batch dimension exceeds batch_size."""
 
     def preprocess(x, in_axis):
         batch_count = x.shape[in_axis] // batch_size
@@ -887,6 +878,10 @@ _glw256 = jnp.array(
         5.6394508908972135e-05,
     ]
 )
+glx128 = _glx128
+glw128 = _glw128
+glx256 = _glx256
+glw256 = _glw256
 
 
 def quad(f, a, b):

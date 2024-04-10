@@ -2,6 +2,8 @@ import hashlib
 from typing import NamedTuple
 
 import jax
+from jax.experimental import mesh_utils
+from jax.sharding import PositionalSharding
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
@@ -40,7 +42,7 @@ class eigenstate_library(NamedTuple):
         combined = hashlib.sha256()
         combined.update(hashlib.md5(jnp.asarray(potential_params.name)).digest())
         combined.update(hashlib.md5(jnp.asarray(r_min)).digest())
-        combined.update(hashlib.md5(jnp.asarray(r_max)).digest())
+        # combined.update(hashlib.md5(jnp.asarray(r_max)).digest())
         combined.update(hashlib.md5(jnp.asarray(N)).digest())
         return hash_to_int64(combined.hexdigest())
 
@@ -67,10 +69,24 @@ class eigenstate_library(NamedTuple):
         )
 
 
+def select_radial_eigenmode_nl(n, l, eigenstate_library):
+    radial_eigenmode_params = eigenstate_library.radial_eigenmode_params
+    return jax.tree_util.tree_map(
+        lambda param: param[
+            jnp.logical_and(
+                radial_eigenmode_params.n == n,
+                radial_eigenmode_params.l == l,
+            )
+        ].squeeze(),
+        radial_eigenmode_params,
+    )
+
+
 a = 1
 b = 10
 
 
+@jax.jit
 def x_of_r(r):
     """
     Transformation from loglinear (non-uniform) r to linear (uniform) x
@@ -78,6 +94,7 @@ def x_of_r(r):
     return a * r + jax.scipy.special.xlogy(b, r)
 
 
+@jax.jit
 def r_of_x(x):
     """
     Transformation from linear (uniform) x to log-linear (non-uniform) r
@@ -402,10 +419,13 @@ def init_radial_eigenmode_params(l, n, potential_params, r_min, r_max, N):
 
 
 def init_eigenstate_library(potential_params, r_min, r_max, N, batch_size=16):
-    init_radial_eigenmodes = map_vmap(
-        jax.jit(init_radial_eigenmode_params, static_argnames="N"),
-        in_axes=(0, 0, None, None, None, None),
-        batch_size=batch_size,
+    init_radial_eigenmodes = jax.jit(
+        map_vmap(
+            init_radial_eigenmode_params,
+            in_axes=(0, 0, None, None, None, None),
+            batch_size=batch_size,
+        ),
+        static_argnames="N",
     )
     compute_all_nmax = jax.vmap(nmax, in_axes=(0, None, None, None, None))
     ll = lmax(potential_params, r_max, N)
@@ -415,10 +435,19 @@ def init_eigenstate_library(potential_params, r_min, r_max, N, batch_size=16):
     name = jax.pure_callback(
         eigenstate_library.compute_name, result_shape, potential_params, r_min, r_max, N
     )
+    if nn.shape[0] == 0:
+        return None
+
+    # sharding = PositionalSharding(mesh_utils.create_device_mesh((len(jax.devices()),)))
+    # ls = jax.device_put(jnp.repeat(jnp.arange(ll), nn), sharding)
+    # ns = jax.device_put(jnp.concatenate([jnp.arange(n) for n in nn]), sharding)
+    ls = jnp.repeat(jnp.arange(ll), nn)
+    ns = jnp.concatenate([jnp.arange(n) for n in nn])
+
     return eigenstate_library(
         radial_eigenmode_params=init_radial_eigenmodes(
-            jnp.repeat(jnp.arange(ll), nn),
-            jnp.concatenate([jnp.arange(n) for n in nn]),
+            ls,
+            ns,
             potential_params,
             r_min,
             r_max,

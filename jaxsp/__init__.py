@@ -6,3 +6,4 @@ from .profiles import *
 from .potential import *
 from .eigenstates_pruess import *
 from .wavefunction import *
+from .stats import *
