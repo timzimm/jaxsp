@@ -2,17 +2,14 @@ import math
 import hashlib
 import os
 import pickle
-import logging
-import ruamel.yaml
+
+# import ruamel.yaml
 
 import jax.numpy as jnp
 import mgzip
 
 # import orbax.checkpoint as ocp
 import shutil
-
-# logger = logging.getLogger(__name__)
-
 
 # checkpointer = ocp.AsyncCheckpointer(ocp.PyTreeCheckpointHandler(), timeout_secs=50)
 
@@ -64,13 +61,13 @@ def hash_to_int64(digested_hash):
     return jnp.int64(num)
 
 
-def load_parameters_from_config(path_to_file):
-    yaml = ruamel.yaml.YAML(typ="safe", pure=True)
-    with open(path_to_file, "r") as file:
-        parameters = yaml.load(file)
+# def load_parameters_from_config(path_to_file):
+#     yaml = ruamel.yaml.YAML(typ="safe", pure=True)
+#     with open(path_to_file, "r") as file:
+#         parameters = yaml.load(file)
 
-    check_parameters(parameters)
-    return parameters
+#     check_parameters(parameters)
+#     return parameters
 
 
 def check_parameters(parameters):
