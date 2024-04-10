@@ -30,8 +30,7 @@ TODO: Add some description + most relevant refs.
 </figure>
 <br/><br/>
 
-The result is an effective, and efficient surrogate model for the ULDM wave function in 
-for spherical symmetric systems. We refer to [our paper](#citing-jaxsp)
+The result is an effective, and efficient surrogate model for the ULDM wave function for spherical symmetric systems. We refer to [our paper](#citing-jaxsp)
 for an in depth exposition of jaxsp's underlying assumptions, physics and application to DM modelling in dwarf spheroidal galaxies.
 
 jaxsp is built on [jax](https://github.com/google/jax). Any computation 
