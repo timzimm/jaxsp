@@ -3,7 +3,6 @@ import hashlib
 import os
 import pickle
 
-# import ruamel.yaml
 
 import jax.numpy as jnp
 import mgzip
@@ -59,16 +58,3 @@ def hash_to_int64(digested_hash):
     num = int(digested_hash, 16)
     num = num // 10 ** (int(math.log(num, 10)) - 18 + 1)
     return jnp.int64(num)
-
-
-# def load_parameters_from_config(path_to_file):
-#     yaml = ruamel.yaml.YAML(typ="safe", pure=True)
-#     with open(path_to_file, "r") as file:
-#         parameters = yaml.load(file)
-
-#     check_parameters(parameters)
-#     return parameters
-
-
-def check_parameters(parameters):
-    pass
