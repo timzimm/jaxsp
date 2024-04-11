@@ -27,6 +27,7 @@ that involves the constructed wave function is therefore differentiable
 to implement.
 
 `jaxsp` may be seen as an evolution of the matrix/regression methods discussed in:
+
 [1] [Yavetz et al. (2021)](https://arxiv.org/abs/2109.06125):
 _Construction of Wave Dark Matter Halos: Numerical Algorithm and Analytical Constraints_
 <br>
