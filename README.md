@@ -26,6 +26,15 @@ that involves the constructed wave function is therefore differentiable
 (via `jax.grad`), simple (thanks to `jax.vmap`) and efficient (with `jax.jit`) 
 to implement.
 
+<figure>
+  <img src="https://github.com/james-alvey-42/jaxsp/blob/c23a854ffbaeaa7e81a07ff5d860efd0b212f534/images/leoII.png" alt="" width="500" align="center">
+  <figcaption align="center">
+  Volume rendering of the ULDM density constructed by jaxsp's as fit of a library of 
+  eigenstates to a density sample of Leo II provided by https://github.com/justinread/gravsphere
+  </figcaption>
+</figure>
+<br/><br/>
+
 `jaxsp` may be seen as an evolution of the matrix/regression methods discussed in:
 
 [1] [Yavetz et al. (2021)](https://arxiv.org/abs/2109.06125):
@@ -38,15 +47,6 @@ _Self-consistent construction of virialized wave dark matter halos_
 _Don't cross the streams: caustics from fuzzy dark matter_
 
 We refer to [our paper](#citing-jaxsp) for an in depth exposition of `jaxsp`'s underlying assumptions, physics and application to DM modelling in dwarf spheroidal galaxies.
-
-<figure>
-  <img src="https://github.com/james-alvey-42/jaxsp/blob/c23a854ffbaeaa7e81a07ff5d860efd0b212f534/images/leoII.png" alt="" width="500" align="center">
-  <figcaption align="center">
-  Volume rendering of the ULDM density constructed by jaxsp's as fit of a library of 
-  eigenstates to a density sample of Leo II provided by https://github.com/justinread/gravsphere
-  </figcaption>
-</figure>
-<br/><br/>
 
 
 **This is a research project. Expect bugs, report bugs, fix more bugs than you
