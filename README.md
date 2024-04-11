@@ -5,7 +5,7 @@ src="https://github.com/james-alvey-42/jaxsp/blob/67be7bc188841bdf2bed02e7265924
 
 ## jaxsp: A Semi Analytical Model for ULDM in Spherical Systems
 [**What is jaxsp**](#what-is-jaxsp)
-| [**Installation**](#installation)
+| [**Installation**](#installation-and-usage)
 | [**Example**](#example)
 | [**Citing jaxsp**](#citing-jaxsp)
 
