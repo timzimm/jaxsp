@@ -73,11 +73,6 @@ The core functionality, i.e. computing densities, potentials, eigenstate librari
 the [tutorial notebook](examples/tutorial.ipynb). For additional examples, we refer to our paper repository TODO.
 
 ## Contributors
-<style>
-  table td {
-    border: none !important;
-  }
-</style>
 <table>
   <tbody>
     <tr>
