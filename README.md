@@ -73,14 +73,13 @@ The core functionality, i.e. computing densities, potentials, eigenstate librari
 the [tutorial notebook](examples/tutorial.ipynb). For additional examples, we refer to our paper repository TODO.
 
 ## Contributors
-| | |
-|:-:|:-:|
-|[<img src="https://images.weserv.nl/?url=github.com/timzimm.png&h=70&w=70&fit=cover&mask=circle&maxage=7d" width="70px;"/><br>Tim Zimmermann](https://github.com/timzimm)|[<img src="https://images.weserv.nl/?url=github.com/james-alvey-42.png&h=70&w=70&fit=cover&mask=circle&maxage=7d" width="70px;"/><br>James Alvey](https://github.com/james-alvey-42)|
-
 <table>
   <tbody>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/timzimm"><img src="https://images.weserv.nl/?url=github.com/timzimm.png&h=100&w=100&fit=cover&mask=circle&maxage=7d" width="100px;" alt="Tim Zimmermann"/><br /><sub><b>Tim Zimmermann</b></sub></a><br /></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/james-alvey-42"><img src="https://images.weserv.nl/?url=github.com/james-alvey-42.png&h=100&w=100&fit=cover&mask=circle&maxage=7d" width="100px;" alt="James Alvey"/><br /><sub><b>James Alvey</b></sub></a><br /></td>
     </tr>
   </tbody>
 </table>
