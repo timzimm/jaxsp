@@ -69,16 +69,22 @@ class eigenstate_library(NamedTuple):
         )
 
 
-def select_radial_eigenmode_nl(n, l, eigenstate_library):
+def select_eigenmode_nl(n, l, eigenstate_library):
     radial_eigenmode_params = eigenstate_library.radial_eigenmode_params
-    return jax.tree_util.tree_map(
+    single_mode_params = jax.tree_util.tree_map(
         lambda param: param[
             jnp.logical_and(
                 radial_eigenmode_params.n == n,
                 radial_eigenmode_params.l == l,
             )
-        ].squeeze(),
+        ],
         radial_eigenmode_params,
+    )
+
+    return eigenstate_library(
+        radial_eigenmode_params=single_mode_params,
+        name=eigenstate_library.name,
+        potential_params=eigenstate_library.potential_params,
     )
 
 
@@ -216,14 +222,6 @@ def A_k(wk2, lk):
     )
 
 
-def compute_principal_minors_ratio_of_symmetric_tridiagonal_matrix(A, B):
-    def R_k(Rkm1, k):
-        Rk = A[k] - 1.0 / Rkm1 * B[k - 1] ** 2
-        return Rk, Rk
-
-    return jax.lax.scan(R_k, A[0], jnp.arange(1, A.shape[0] - 1))[1]
-
-
 def right_turning_point(E, params_w, params_q):
     wk2 = params_w.f_i * E - params_q.f_i
     k = jnp.argmax(wk2[::-1] >= 0)
@@ -238,6 +236,14 @@ def number_of_eigenvalues_up_to(E, params_w, params_q):
     See:
         10.1016/0021-9991(83)90101-8
     """
+
+    def compute_principal_minors_ratio_of_symmetric_tridiagonal_matrix(A, B):
+        def R_k(Rkm1, k):
+            Rk = A[k] - 1.0 / Rkm1 * B[k - 1] ** 2
+            return Rk, Rk
+
+        return jax.lax.scan(R_k, A[0], jnp.arange(1, A.shape[0] - 1))[1]
+
     wk2 = params_w.f_i * E - params_q.f_i
     wk_allowed = jnp.sqrt(jax.nn.relu(params_w.f_i * E - params_q.f_i))
     lk = jnp.diff(params_q.x_i)

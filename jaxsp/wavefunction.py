@@ -93,12 +93,15 @@ def init_wavefunction_params_jensen_shannon(
 
     log_aj2 = jnp.log(jnp.ones(eigenstate_library.J) / eigenstate_library.J)
 
-    gd = GradientDescent(fun=jensen_shannon_divergence, maxiter=100, tol=1e-3)
+    gd = GradientDescent(
+        fun=jensen_shannon_divergence, maxiter=100, tol=1e-3, implicit_diff=False
+    )
     lbfgs = LBFGS(
         fun=jensen_shannon_divergence,
         maxiter=200000,
         tol=tol,
         stop_if_linesearch_fails=True,
+        implicit_diff=False,
         linesearch="hager-zhang",
     )
     res = gd.run(log_aj2, R_j2_log_rj=R_j2_log_rj, rho_in_log_rj=rho_in_log_rj)
@@ -131,43 +134,96 @@ def rho_psi(r, wavefunction_params, eigenstate_library):
 
 
 def psi(r, wavefunction_params, eigenstate_lib, l_max, n_max, key):
-    def sph_harm_coeff_lm(r, wavefunction_params, radial_eigenmode_params, key):
-        def abs_a_ln_R_ln(r, wavefunction_params, radial_eigenmode_params):
-            R_j = eval_library(r, radial_eigenmode_params)
-            abs_a_j = jnp.sqrt(wavefunction_params.aj_2)
-            aR_ln = jnp.zeros((l_max + 1, n_max))
-
-            def populate(j, mat_ln_mat_j_radial_eigenmode_params):
-                (
-                    mat_ln,
-                    mat_j,
-                    radial_eigenmode_params,
-                ) = mat_ln_mat_j_radial_eigenmode_params
-                return (
-                    mat_ln.at[
-                        radial_eigenmode_params.l[j], radial_eigenmode_params.n[j]
-                    ].set(mat_j[j]),
-                    mat_j,
-                    radial_eigenmode_params,
-                )
-
-            return jax.lax.fori_loop(
-                0,
-                eigenstate_lib.J,
-                populate,
-                (aR_ln, abs_a_j * R_j, radial_eigenmode_params),
-            )[0]
-
-        phi_lmn = jnp.exp(
-            1.0j
-            * jax.random.uniform(
-                key, shape=(l_max + 1, 2 * l_max + 1, n_max), maxval=2 * jnp.pi
-            )
-        )
-        aR_ln_r = abs_a_ln_R_ln(r, wavefunction_params, radial_eigenmode_params)
-        return jnp.einsum("lmn,ln->lm", phi_lmn, aR_ln_r)
-
-    coef_lm = sph_harm_coeff_lm(
-        r, wavefunction_params, eigenstate_lib.radial_eigenmode_params, key
+    coef_lm = _sph_harm_coeff_lm(
+        r,
+        wavefunction_params,
+        eigenstate_lib.radial_eigenmode_params,
+        l_max,
+        n_max,
+        key,
     )
-    return inverse_sht(coef_lm, l_max + 1, sampling="healpix", nside=16)
+    return inverse_sht(coef_lm, l_max + 1, sampling="healpix", nside=(l_max + 1) // 2)
+
+
+def psi_exact(r, theta, phi, wavefunction_params, eigenstate_lib, l_max, n_max, key):
+    sph_harm = lambda *args: jax.scipy.special.sph_harm(*args, n_max=l_max)
+    theta = jnp.atleast_1d(theta)
+    phi = jnp.atleast_1d(phi)
+
+    def Y_lm(theta, phi):
+        sph_harm_mat = jnp.zeros((l_max + 1, 2 * l_max + 1), dtype=jnp.complex_)
+
+        def populate(lm, sph_harm_mat):
+            l = jnp.atleast_1d((jnp.floor(jnp.sqrt(lm)))).astype(int)
+            m = jnp.atleast_1d((lm - l**2 - l)).astype(int)
+            sph_harm_mat = sph_harm_mat.at[l, m + l_max].set(
+                sph_harm(l, m, theta, phi)[0]
+            )
+            return sph_harm_mat
+
+        return jax.lax.fori_loop(0, (l_max + 1) ** 2, populate, sph_harm_mat)
+
+    coef_lm_r = _sph_harm_coeff_lm(
+        r,
+        wavefunction_params,
+        eigenstate_lib.radial_eigenmode_params,
+        l_max,
+        n_max,
+        key,
+    )
+    Y_lm_thetaphi = Y_lm(theta, phi)
+    return jnp.einsum("lm,lm->", coef_lm_r, Y_lm_thetaphi)
+
+
+def _sph_harm_coeff_lm(
+    r, wavefunction_params, radial_eigenmode_params, l_max, n_max, key
+):
+    l_max = jax.core.concrete_or_error(
+        int,
+        l_max,
+        "The `l_max` argument must be statically"
+        "specified to use within JAX transformations.",
+    )
+    n_max = jax.core.concrete_or_error(
+        int,
+        n_max,
+        "The `n_max` argument must be statically"
+        "specified to use within JAX transformations.",
+    )
+
+    def abs_a_ln_R_ln(r, wavefunction_params, radial_eigenmode_params):
+        R_j = eval_library(r, radial_eigenmode_params)
+        abs_a_j = jnp.sqrt(wavefunction_params.aj_2)
+        aR_ln = jnp.zeros((l_max + 1, n_max))
+
+        def populate(j, mat_ln_mat_j_radial_eigenmode_params):
+            (
+                mat_ln,
+                mat_j,
+                radial_eigenmode_params,
+            ) = mat_ln_mat_j_radial_eigenmode_params
+            return (
+                mat_ln.at[
+                    radial_eigenmode_params.l[j], radial_eigenmode_params.n[j]
+                ].set(mat_j[j]),
+                mat_j,
+                radial_eigenmode_params,
+            )
+
+        return jax.lax.fori_loop(
+            0,
+            radial_eigenmode_params.l.shape[0],
+            populate,
+            (aR_ln, abs_a_j * R_j, radial_eigenmode_params),
+        )[0]
+
+    phi_lmn = jnp.exp(
+        1.0j
+        * jax.random.uniform(
+            key, shape=(l_max + 1, 2 * l_max + 1, n_max), maxval=2 * jnp.pi
+        )
+    )
+    aR_ln_r = abs_a_ln_R_ln(r, wavefunction_params, radial_eigenmode_params)
+    return jnp.sqrt(wavefunction_params.total_mass) * jnp.einsum(
+        "lmn,ln->lm", phi_lmn, aR_ln_r
+    )
