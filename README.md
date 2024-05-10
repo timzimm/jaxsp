@@ -76,17 +76,15 @@ the [tutorial notebook](examples/tutorial.ipynb). For additional examples, we re
 <table>
   <tbody>
     <tr>
-      <td align="center" valign="top" width="15%"><a href="https://github.com/timzimm"><img src="https://images.weserv.nl/?url=github.com/timzimm.png&h=100&w=100&fit=cover&mask=circle&maxage=7d" width="100px;" alt="Tim Zimmermann"/><br /><sub><b>Tim Zimmermann</b></sub></a><br /></td>
+      <td align="center" valign="top" width="15%"><a href="https://github.com/timzimm"><img src="https://images.weserv.nl/?url=github.com/timzimm.png&h=120&w=120&fit=cover&mask=circle&maxage=7d" width="120px;" alt="Tim Zimmermann"/><br /><sub><b>Tim Zimmermann</b></sub></a><br /></td>
       <td align="center" valign="top" width="15%"><a href="https://github.com/james-alvey-42"><img src="https://images.weserv.nl/?url=github.com/james-alvey-42.png&h=140&w=140&fit=cover&mask=circle&maxage=7d" width="140px;" alt="James Alvey"/><br /><sub><b>James Alvey</b></sub></a><br /></td>
       <td align="center" valign="top" width="15%"><a href="https://djemarsh.wixsite.com/physics"><img src="https://images.weserv.nl/?url=kcl.ac.uk/newimages/nmes/person-profile-160x160/david-marsh.x2e7de521.jpg&h=140&w=140&fit=cover&mask=circle&maxage=7d" width="140px;" alt="David J.E. Marsh"/><br /><sub><b>David J.E. Marsh</b></sub></a><br /></td>
-
     </tr>
   </tbody>
 </table>
 ## Citing jaxsp
 If you use jaxsp for any publication we kindly ask you to cite
 TODO
-kcl.ac.uk/newimages/nmes/person-profile-160x160/david-marsh.x2e7de521.jpg?w=160&h=234&crop=160,160,0,15&f=webp
 
 ## Acknowledgement
 <div align="center">
