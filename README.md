@@ -73,11 +73,9 @@ The core functionality, i.e. computing densities, potentials, eigenstate librari
 the [tutorial notebook](examples/tutorial.ipynb). For additional examples, we refer to our paper repository TODO.
 
 ## Contributors
-
-
-
+| | |
 |:-:|:-:|
-|![<img src="https://images.weserv.nl/?url=github.com/timzimm.png&h=70&w=70&fit=cover&mask=circle&maxage=7d" width="70px;"/><br /><sub>Tim Zimmermann (@timzimm)](https://github.com/timzimm)|![<img src="https://images.weserv.nl/?url=github.com/james-alvey-42.png&h=70&w=70&fit=cover&mask=circle&maxage=7d" width="70px;"/><br /><sub>James Alvey (@james-alvey-42)](https://github.com/james-alvey-42)|
+|[<img src="https://images.weserv.nl/?url=github.com/timzimm.png&h=70&w=70&fit=cover&mask=circle&maxage=7d" width="70px;"/><br /><sub>Tim Zimmermann (@timzimm)](https://github.com/timzimm)|[<img src="https://images.weserv.nl/?url=github.com/james-alvey-42.png&h=70&w=70&fit=cover&mask=circle&maxage=7d" width="70px;"/><br /><sub>James Alvey (@james-alvey-42)](https://github.com/james-alvey-42)|
 
 ## Citing jaxsp
 If you use jaxsp for any publication we kindly ask you to cite
