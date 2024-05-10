@@ -83,6 +83,7 @@ the [tutorial notebook](examples/tutorial.ipynb). For additional examples, we re
     </tr>
   </tbody>
 </table>
+
 ## Citing jaxsp
 If you use jaxsp for any publication we kindly ask you to cite
 TODO
