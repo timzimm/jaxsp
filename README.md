@@ -72,6 +72,10 @@ before executing a script that contains `jaxsp` code.
 The core functionality, i.e. computing densities, potentials, eigenstate libraries and wave function parameters, is showcased in 
 the [tutorial notebook](examples/tutorial.ipynb). For additional examples, we refer to our paper repository TODO.
 
+## Contributors
+[<img src="https://github.com/{{timtzimm}}.png" width="60px;"/><br /><sub><ahref="https://github.com/{{timzimm}}">{{ contributor }}</a></sub>](https://github.com/{{timzimm}}
+
+
 ## Citing jaxsp
 If you use jaxsp for any publication we kindly ask you to cite
 TODO
