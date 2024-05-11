@@ -89,8 +89,11 @@ If you use jaxsp for any publication we kindly ask you to cite
 TODO
 
 ## Acknowledgement
-<div align="center">
-<img
-src="https://github.com/james-alvey-42/jaxsp/blob/67be7bc188841bdf2bed02e72659245f0a2b2a1b/images/eu_acknowledgement_compsci_3.png" alt="logo"></img>
-</div>
+![eu](https://github.com/james-alvey-42/jaxsp/blob/67be7bc188841bdf2bed02e72659245f0a2b2a1b/images/eu_acknowledgement_compsci_3.png#gh-light-mode-only)
+![eu](https://github.com/james-alvey-42/jaxsp/blob/0a2a65a2cca5f1f8c2d6591d2a9e48cabb41ff96/images/eu_acknowledgement_compsci_3_white.png#gh-dark-mode-only)
+
+<!-- <div align="center"> -->
+<!-- <img -->
+<!-- src="https://github.com/james-alvey-42/jaxsp/blob/67be7bc188841bdf2bed02e72659245f0a2b2a1b/images/eu_acknowledgement_compsci_3.png" alt="logo"></img> -->
+<!-- </div> -->
 
