@@ -54,7 +54,7 @@ def init_potential_params(density_params, rmin, rmax, N):
     @partial(jax.vmap, in_axes=(None, 0))
     def dPhi_rescaled(r, x):
         """
-        As above but transformed such that integration limits are x=-1 to x=1 and
+        As above but transformed such that integration limits are x=0 to x=1 and
         radius r appears as parameter in the integrand
         """
         return dPhi(x / (1 - x) + r) / (1 - x) ** 2
