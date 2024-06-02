@@ -70,7 +70,7 @@ before executing a script that contains `jaxsp` code.
 
 ## Example
 The core functionality, i.e. computing densities, potentials, eigenstate libraries and wave function parameters, is showcased in 
-the [tutorial notebook](examples/tutorial.ipynb). For additional examples, we refer to our paper [repository](https://github.com/timzimm/boson_dsph).
+the [tutorial notebook](examples/tutorial.ipynb). For additional examples, we refer to our [paper repository](https://github.com/timzimm/boson_dsph).
 
 ## Contributors
 <table>
