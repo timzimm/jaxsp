@@ -2,16 +2,15 @@ import hashlib
 from typing import NamedTuple
 
 import jax
-from jax.experimental import mesh_utils
-from jax.sharding import PositionalSharding
 import jax.numpy as jnp
 from jax.typing import ArrayLike
+from jaxopt import Bisection
 
 from .interpolate import piecewise_constant_interpolation_params
-from .potential import potential, wkb_estimate_of_rmax
+from .potential import potential as gravitational_potential
 from .special import lambertw
 from .io_utils import hash_to_int64
-from .utils import map_vmap
+from .utils import map_vmap, quad
 
 
 class eigenmode_params(NamedTuple):
@@ -130,7 +129,7 @@ def r_of_x(x):
     )
 
 
-def q(x, l, V0, potential_params):
+def q(x, l, V0, potential_params, potential=gravitational_potential):
     """
     Sturm Liouville q-function of log-linear transformed radial Schroedinger equation.
     The full form SL-problem reads:
@@ -162,11 +161,13 @@ def w(x):
     return 2 * r**2 / (b + a * r) ** 2
 
 
-def init_piecewise_constant_q(potential_params, l, V0, rmin, rmax, N):
+def init_piecewise_constant_q(
+    potential_params, l, V0, rmin, rmax, N, potential=gravitational_potential
+):
     qq = jax.vmap(q, in_axes=(0, None, None, None))
     x = jnp.linspace(x_of_r(rmin), x_of_r(rmax), N)
     return piecewise_constant_interpolation_params(
-        f_i=qq(1 / 2 * (x[:-1] + x[1:]), l, V0, potential_params),
+        f_i=qq(1 / 2 * (x[:-1] + x[1:]), l, V0, potential_params, potential=potential),
         x_i=x,
     )
 
@@ -258,13 +259,48 @@ def number_of_eigenvalues_up_to(E, params_w, params_q):
     return N0 + sign_count
 
 
-def lmax(potential_params, r_max, N):
-    def nmax(l, Emax):
-        r_wkb_for_r_ta = wkb_estimate_of_rmax(r_max, l, potential_params)
+def V_effective(r, l, potential_params, potential=gravitational_potential):
+    return 0.5 * l * (l + 1) / r**2 + potential(r, potential_params)
+
+
+@jax.jit
+def wkb_estimate_of_rmax(r, l, potential_params, potential=gravitational_potential):
+    def wkb_condition_Veff(r_lower, r_upper, Emax):
+        return (
+            jnp.sqrt(2)
+            * quad(
+                jax.vmap(
+                    lambda r: jnp.sqrt(
+                        V_effective(r, l, potential_params, potential=potential) - Emax
+                    )
+                ),
+                r_lower,
+                r_upper,
+            )
+            - 18
+        )
+
+    Emax = potential(r, potential_params)
+    bisec = Bisection(
+        optimality_fun=lambda logr: wkb_condition_Veff(r, jnp.exp(logr), Emax),
+        lower=jnp.log(r),
+        upper=jnp.log(10 * r),
+        check_bracket=False,
+    )
+    logrmax = bisec.run().params
+
+    return jnp.exp(logrmax)
+
+
+def lmax(potential_params, r_max, N, potential=gravitational_potential):
+    def nmax(l, Emax, potential):
+        r_wkb_for_r_ta = wkb_estimate_of_rmax(
+            r_max, l, potential_params, potential=potential
+        )
         rmin = 1e-6
 
         params_q = init_piecewise_constant_q(
-            potential_params, l, V0, rmin, r_wkb_for_r_ta, N
+            potential_params, l, V0, rmin, r_wkb_for_r_ta, N, potential=potential
         )
         params_w = init_piecewise_constant_w(rmin, r_wkb_for_r_ta, N)
         return number_of_eigenvalues_up_to(Emax, params_w, params_q)
@@ -272,19 +308,21 @@ def lmax(potential_params, r_max, N):
     V0 = jnp.abs(potential(0.0, potential_params))
     Emax = potential(r_max, potential_params) + V0
     return jax.lax.while_loop(
-        lambda l: nmax(l, Emax) > 0,
+        lambda l: nmax(l, Emax, potential) > 0,
         lambda l: l + 1,
         0,
     ).astype(jnp.int32)
 
 
-def nmax(l, potential_params, r_min, r_max, N):
+def nmax(l, potential_params, r_min, r_max, N, potential=gravitational_potential):
     V0 = jnp.abs(potential(0.0, potential_params))
     Emax = potential(r_max, potential_params) + V0
-    r_wkb_for_r_ta = wkb_estimate_of_rmax(r_max, l, potential_params)
+    r_wkb_for_r_ta = wkb_estimate_of_rmax(
+        r_max, l, potential_params, potential=potential
+    )
 
     params_q = init_piecewise_constant_q(
-        potential_params, l, V0, r_min, r_wkb_for_r_ta, N
+        potential_params, l, V0, r_min, r_wkb_for_r_ta, N, potential=potential
     )
     params_w = init_piecewise_constant_w(r_min, r_wkb_for_r_ta, N)
     return number_of_eigenvalues_up_to(Emax, params_w, params_q).astype(jnp.int32)
@@ -407,12 +445,16 @@ def init_eigenmode_params_between(E_l, E_u, params_w, params_q, eps=1e-8):
     )
 
 
-def init_radial_eigenmode_params(l, n, potential_params, r_min, r_max, N):
+def init_radial_eigenmode_params(
+    l, n, potential_params, r_min, r_max, N, potential=gravitational_potential
+):
     k = n + 1
     V0 = jnp.abs(potential(0.0, potential_params))
     Emax = potential(r_max, potential_params) + V0
-    rwkb = wkb_estimate_of_rmax(r_max, l, potential_params)
-    params_q = init_piecewise_constant_q(potential_params, l, V0, r_min, rwkb, N)
+    rwkb = wkb_estimate_of_rmax(r_max, l, potential_params, potential=potential)
+    params_q = init_piecewise_constant_q(
+        potential_params, l, V0, r_min, rwkb, N, potential=potential
+    )
     params_w = init_piecewise_constant_w(r_min, rwkb, N)
     E_l, E_u = bound_eigenvalue_k(k, Emax, params_w, params_q)
 
@@ -424,7 +466,9 @@ def init_radial_eigenmode_params(l, n, potential_params, r_min, r_max, N):
     )
 
 
-def init_eigenstate_library(potential_params, r_min, r_max, N, batch_size=16):
+def init_eigenstate_library(
+    potential_params, r_min, r_max, N, batch_size=16, potential=gravitational_potential
+):
     init_radial_eigenmodes = jax.jit(
         map_vmap(
             init_radial_eigenmode_params,
@@ -434,8 +478,10 @@ def init_eigenstate_library(potential_params, r_min, r_max, N, batch_size=16):
         static_argnames="N",
     )
     compute_all_nmax = jax.vmap(nmax, in_axes=(0, None, None, None, None))
-    ll = lmax(potential_params, r_max, N)
-    nn = compute_all_nmax(jnp.arange(ll), potential_params, r_min, r_max, N)
+    ll = lmax(potential_params, r_max, N, potential=potential)
+    nn = compute_all_nmax(
+        jnp.arange(ll), potential_params, r_min, r_max, N, potential=potential
+    )
 
     result_shape = jax.ShapeDtypeStruct((), jnp.int64)
     name = jax.pure_callback(
@@ -444,20 +490,12 @@ def init_eigenstate_library(potential_params, r_min, r_max, N, batch_size=16):
     if nn.shape[0] == 0:
         return None
 
-    # sharding = PositionalSharding(mesh_utils.create_device_mesh((len(jax.devices()),)))
-    # ls = jax.device_put(jnp.repeat(jnp.arange(ll), nn), sharding)
-    # ns = jax.device_put(jnp.concatenate([jnp.arange(n) for n in nn]), sharding)
     ls = jnp.repeat(jnp.arange(ll), nn)
     ns = jnp.concatenate([jnp.arange(n) for n in nn])
 
     return eigenstate_library(
         radial_eigenmode_params=init_radial_eigenmodes(
-            ls,
-            ns,
-            potential_params,
-            r_min,
-            r_max,
-            N,
+            ls, ns, potential_params, r_min, r_max, N, potential=potential
         ),
         name=name,
         potential_params=potential_params.name,

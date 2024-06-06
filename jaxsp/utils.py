@@ -23,9 +23,9 @@ def _tree_map_multi_output(f, *args):
     return tuple(tree_unflatten(treedefs[0], out) for out in outputs)
 
 
-def _lax_map(f, *xs):
+def _lax_map(f, *xs, **kwargs):
     """Like lax.map, but supports multiple arguments like the built-in map."""
-    _, ys = jax.lax.scan(lambda _, x: ((), f(*x)), (), xs)
+    _, ys = jax.lax.scan(lambda _, x: ((), f(*x, **kwargs)), (), xs)
     return ys
 
 
@@ -53,7 +53,7 @@ def map_vmap(
         return jax.numpy.moveaxis(x, 0, out_axis)
 
     @wraps(f)
-    def _batch_vmap_wrapper(*args):
+    def _batch_vmap_wrapper(*args, **kwargs):
         if isinstance(in_axes, int) or in_axes is None:
             in_axes_tuple = (in_axes,) * len(args)
         else:
@@ -77,14 +77,14 @@ def map_vmap(
                 batched_args.append(loop_arg)
                 remainder_args.append(tail_arg)
 
-        def vmap_f(*args):
+        def vmap_f(*args, **kwargs):
             args2 = list(args)
             for i, arg in broadcasts_args:
                 args2.insert(i, arg)
-            return f(*args2)
+            return f(*args2, **kwargs)
 
-        loop_out = _lax_map(jax.vmap(vmap_f), *batched_args)
-        tail_out = jax.vmap(vmap_f)(*remainder_args)
+        loop_out = _lax_map(jax.vmap(vmap_f), *batched_args, **kwargs)
+        tail_out = jax.vmap(vmap_f)(*remainder_args, **kwargs)
         if isinstance(out_axes, int):
             out = tree_map(partial(postprocess, out_axis=out_axes), loop_out, tail_out)
         else:
