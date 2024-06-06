@@ -49,13 +49,102 @@ class wavefunction_params(NamedTuple):
         )
 
 
-eval_library = jax.vmap(eval_radial_eigenmode, in_axes=(None, 0))
+_eval_library = jax.vmap(eval_radial_eigenmode, in_axes=(None, 0))
+_eval_library_mult_r = jax.vmap(_eval_library, in_axes=(0, None))
+_rho_in = jax.vmap(rho, in_axes=(0, None))
+
+
+def _sample_gauss_legendre_integrand(eigenstate_library, density_params, r_min, r_max):
+    log_rj = jnp.log(r_min) + (jnp.log(r_max) - jnp.log(r_min)) * x_i
+    rho_in_log_rj = jnp.nan_to_num(
+        _rho_in(jnp.exp(log_rj), density_params), nan=jnp.inf
+    ) / total_mass(density_params)
+    R_j2_log_rj = (
+        (2 * eigenstate_library.radial_eigenmode_params.l.T + 1)
+        / (4 * jnp.pi)
+        * _eval_library_mult_r(
+            jnp.exp(log_rj), eigenstate_library.radial_eigenmode_params
+        )
+        ** 2
+    )
+
+    dlogr_jac = 4 * jnp.pi * (jnp.log(r_max) - jnp.log(r_min)) * jnp.exp(3 * log_rj)
+    return R_j2_log_rj, rho_in_log_rj, dlogr_jac
+
+
+@jax.tree_util.Partial
+def jensen_shannon_divergence(log_aj2, precomputed_quantities):
+    R_j2_log_rj, rho_in_log_rj, dlogr_jac = precomputed_quantities
+    rho_psi_log_rj = R_j2_log_rj @ jnp.exp(log_aj2)
+    log_M = jnp.log2(0.5 * (rho_psi_log_rj + rho_in_log_rj))
+    kl_pm = rho_psi_log_rj * (jnp.log2(rho_psi_log_rj) - log_M)
+    kl_qm = rho_in_log_rj * (jnp.log2(rho_in_log_rj) - log_M)
+    return 0.5 * (dlogr_jac * (kl_pm + kl_qm)) @ w_i
+
+
+jensen_shannon_divergence.precompute = _sample_gauss_legendre_integrand
+
+
+def init_wavefunction_params(
+    objective_function,
+    eigenstate_library,
+    density_params,
+    r_min,
+    r_fit,
+    tol,
+    verbose=True,
+):
+    result_shape = jax.ShapeDtypeStruct((), jnp.int64)
+    name = jax.pure_callback(
+        wavefunction_params.compute_name,
+        result_shape,
+        eigenstate_library,
+        density_params,
+        r_min,
+        r_fit,
+        tol,
+    )
+
+    precomputed_quantities = objective_function.precompute(
+        eigenstate_library, density_params, r_min, r_fit
+    )
+
+    gd = GradientDescent(
+        fun=objective_function, maxiter=100, tol=1e-3, implicit_diff=False
+    )
+    lbfgs = LBFGS(
+        fun=objective_function,
+        maxiter=200000,
+        tol=tol,
+        stop_if_linesearch_fails=True,
+        implicit_diff=False,
+        linesearch="hager-zhang",
+    )
+
+    log_aj2 = jnp.log(jnp.ones(eigenstate_library.J) / eigenstate_library.J)
+    res = gd.run(log_aj2, precomputed_quantities=precomputed_quantities)
+    res = lbfgs.run(res.params, precomputed_quantities=precomputed_quantities)
+
+    params = wavefunction_params(
+        eigenstate_library=eigenstate_library.name,
+        density_params=density_params.name,
+        aj_2=jnp.exp(res.params),
+        r_min=r_min,
+        r_fit=r_fit,
+        total_mass=total_mass(density_params),
+        distance=jensen_shannon_divergence(res.params, precomputed_quantities),
+        name=name,
+        error=res.state.error,
+        steps=res.state.iter_num,
+        failed=not res.state.failed_linesearch,
+    )
+    return params
 
 
 def init_wavefunction_params_jensen_shannon(
     eigenstate_library, density_params, r_min, r_fit, tol, verbose=True
 ):
-    eval_library_mult_r = jax.vmap(eval_library, in_axes=(0, None))
+    eval_library_mult_r = jax.vmap(_eval_library, in_axes=(0, None))
     rho_in = jax.vmap(rho, in_axes=(0, None))
 
     result_shape = jax.ShapeDtypeStruct((), jnp.int64)
@@ -128,7 +217,7 @@ def rho_psi(r, wavefunction_params, eigenstate_library):
         (2 * eigenstate_library.radial_eigenmode_params.l.squeeze() + 1)
         * wavefunction_params.total_mass
         / (4 * jnp.pi)
-        * eval_library(r, eigenstate_library.radial_eigenmode_params) ** 2
+        * _eval_library(r, eigenstate_library.radial_eigenmode_params) ** 2
     )
     return R_j2_r @ wavefunction_params.aj_2
 
@@ -192,7 +281,7 @@ def _sph_harm_coeff_lm(
     )
 
     def abs_a_ln_R_ln(r, wavefunction_params, radial_eigenmode_params):
-        R_j = eval_library(r, radial_eigenmode_params)
+        R_j = _eval_library(r, radial_eigenmode_params)
         abs_a_j = jnp.sqrt(wavefunction_params.aj_2)
         aR_ln = jnp.zeros((l_max + 1, n_max))
 
