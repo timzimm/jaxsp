@@ -4,48 +4,11 @@ import hashlib
 import jax
 import jax.numpy as jnp
 
-# from flax.struct import dataclass
-from jaxopt import Broyden, Bisection
+from jaxopt import Bisection
 
 from .constants import Delta, om
 
 from .io_utils import hash_to_int64
-
-# from .model import Model
-
-
-# @dataclass
-# class core_NFW_tides_params(Model):
-#     """
-#     Parameters specifying the cored-NFW-tides (cNFWt) density model introduced
-#     in arxiv:1805.06934. This is the internal dark matter halo model used by GravSphere
-#     """
-
-#     M200: float
-#     c: float
-#     n: float
-#     rc: float
-#     rt: float
-#     delta: float
-
-#     @classmethod
-#     def init(cls, *args):
-#         name = cls.compute_name(*args)
-#         return cls(name, *args)
-
-#     @property
-#     def rs(self):
-#         return (3.0 * self.M200 * om.value / (4 * jnp.pi * Delta.value)) ** (
-#             1.0 / 3.0
-#         ) / self.c
-
-#     @property
-#     def g(self):
-#         return 1.0 / (jnp.log(1.0 + self.c) - self.c / (1.0 + self.c))
-
-#     @property
-#     def rho0(self):
-#         return 1.0 / om.value * Delta.value * self.c**3.0 * self.g / 3.0
 
 
 class core_NFW_tides_params(NamedTuple):
