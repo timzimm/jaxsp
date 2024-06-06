@@ -90,12 +90,12 @@ jensen_shannon_divergence.precompute = _sample_gauss_legendre_integrand
 
 
 def init_wavefunction_params(
-    objective_function,
     eigenstate_library,
     density_params,
     r_min,
     r_fit,
     tol,
+    objective_function=jensen_shannon_divergence,
     verbose=True,
 ):
     result_shape = jax.ShapeDtypeStruct((), jnp.int64)
@@ -140,7 +140,7 @@ def init_wavefunction_params(
         name=name,
         error=res.state.error,
         steps=res.state.iter_num,
-        failed=not res.state.failed_linesearch,
+        failed=jnp.logical_not(res.state.failed_linesearch),
     )
     return params
 
