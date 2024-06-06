@@ -886,7 +886,7 @@ glw256 = _glw256
 
 def quad(f, a, b):
     """
-    Fixed order (order=12) Gauss-Legendre quadrature for integration of f(x)
+    Fixed order Gauss-Legendre quadrature for integration of f(x)
     from x=a to x=b
     """
     x_i = a + (b - a) * _glx256
