@@ -1,3 +1,4 @@
+import numpy as np
 import builtins
 from functools import wraps, partial
 from typing import Any, Callable, TypeVar
@@ -91,6 +92,16 @@ def map_vmap(
         return out
 
     return _batch_vmap_wrapper  # type: ignore
+
+
+def leggauss_unit_interval(order):
+    leave_shape_dtype = jax.ShapeDtypeStruct((order,), float)
+    xj, wj = jax.pure_callback(
+        lambda order: np.polynomial.legendre.leggauss(order.item()),
+        (leave_shape_dtype, leave_shape_dtype),
+        order,
+    )
+    return 0.5 * (xj + 1), 0.5 * wj
 
 
 _glx128 = jnp.array(

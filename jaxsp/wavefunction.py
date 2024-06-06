@@ -11,6 +11,7 @@ from .profiles import rho as rho, total_mass
 from .eigenstates_pruess import eval_radial_eigenmode
 from .io_utils import hash_to_int64
 from .utils import _glx128 as x_i, _glw128 as w_i
+from .utils import leggauss_unit_interval
 
 
 class wavefunction_params(NamedTuple):
@@ -54,7 +55,10 @@ _eval_library_mult_r = jax.vmap(_eval_library, in_axes=(0, None))
 _rho_in = jax.vmap(rho, in_axes=(0, None))
 
 
-def _sample_gauss_legendre_integrand(eigenstate_library, density_params, r_min, r_max):
+def _sample_gauss_legendre_integrand(
+    eigenstate_library, density_params, r_min, r_max, order=128
+):
+    x_i, w_i = leggauss_unit_interval(order)
     log_rj = jnp.log(r_min) + (jnp.log(r_max) - jnp.log(r_min)) * x_i
     rho_in_log_rj = jnp.nan_to_num(
         _rho_in(jnp.exp(log_rj), density_params), nan=jnp.inf
@@ -69,12 +73,12 @@ def _sample_gauss_legendre_integrand(eigenstate_library, density_params, r_min, 
     )
 
     dlogr_jac = 4 * jnp.pi * (jnp.log(r_max) - jnp.log(r_min)) * jnp.exp(3 * log_rj)
-    return R_j2_log_rj, rho_in_log_rj, dlogr_jac
+    return R_j2_log_rj, rho_in_log_rj, dlogr_jac, w_i
 
 
 @jax.tree_util.Partial
 def jensen_shannon_divergence(log_aj2, precomputed_quantities):
-    R_j2_log_rj, rho_in_log_rj, dlogr_jac = precomputed_quantities
+    R_j2_log_rj, rho_in_log_rj, dlogr_jac, w_i = precomputed_quantities
     rho_psi_log_rj = R_j2_log_rj @ jnp.exp(log_aj2)
     log_M = jnp.log2(0.5 * (rho_psi_log_rj + rho_in_log_rj))
     kl_pm = rho_psi_log_rj * (jnp.log2(rho_psi_log_rj) - log_M)
