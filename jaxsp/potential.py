@@ -12,7 +12,7 @@ from .interpolate import (
 )
 from .profiles import enclosed_mass
 from .io_utils import hash_to_int64
-from .utils import quad, _glx128 as xj, _glw128 as wj
+from .utils import quad, leggauss_unit_interval
 
 
 class potential_params(NamedTuple):
@@ -72,6 +72,7 @@ def init_potential_params(density_params, rmin, rmax, N):
     # dPhi vanishes at r=inf. We therefore exclude this point to avoid the
     # singularity of the jacobian factor in dPhi_rescaled. This is fine since
     # M(r)/r**2 decays faster than 1/r^2
+    xj, wj = leggauss_unit_interval(128)
     potential_t = dPhi_rescaled(r, xj) @ wj
     params = init_1d_interpolation_params(tmin, t[1] - t[0], potential_t)
     return potential_params(
