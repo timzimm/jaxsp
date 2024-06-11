@@ -4,13 +4,20 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
-from jaxopt import Bisection
 
 from .interpolate import piecewise_constant_interpolation_params
 from .potential import potential as gravitational_potential
-from .special import lambertw
 from .io_utils import hash_to_int64
-from .utils import map_vmap, quad
+from .utils import map_vmap
+from .radial_schroedinger import (
+    x_of_r,
+    r_of_x,
+    wkb_estimate_of_rmax,
+    w,
+    q,
+    _LOG_LINEAR_GRID_A,
+    _LOG_LINEAR_GRID_B,
+)
 
 
 class eigenmode_params(NamedTuple):
@@ -85,80 +92,6 @@ def select_eigenmode_nl(n, l, eigenstate_library):
         name=eigenstate_library.name,
         potential_params=eigenstate_library.potential_params,
     )
-
-
-a = 1
-b = 10
-
-
-@jax.jit
-def x_of_r(r):
-    """
-    Transformation from loglinear (non-uniform) r to linear (uniform) x
-    """
-    return a * r + jax.scipy.special.xlogy(b, r)
-
-
-@jax.jit
-def r_of_x(x):
-    """
-    Transformation from linear (uniform) x to log-linear (non-uniform) r
-    """
-
-    def lambertw_exp_asymptotic(x, a, b):
-        """
-        Asymptotic approximation for W(a/b * exp(x/b)) for large x
-        (which would overflow due to exp())
-
-        See:
-            https://en.wikipedia.org/wiki/Lambert_W_function#Asymptotic_expansions
-        """
-        L1 = jnp.log(a / b) + x / b
-        L2 = jnp.log(L1)
-        return L1 - L2 + L2 / L1 + L2 * (-2 + L2) / (2 * L1**2)
-
-    if a == 0:
-        return jnp.exp(x / b)
-    if b == 0:
-        return x / a
-    return jax.lax.cond(
-        x < 100,
-        lambda x: b / a * lambertw(a / b * jnp.exp(x / b)),
-        lambda x: b / a * lambertw_exp_asymptotic(x, a, b),
-        x,
-    )
-
-
-def q(x, l, V0, potential_params, potential=gravitational_potential):
-    """
-    Sturm Liouville q-function of log-linear transformed radial Schroedinger equation.
-    The full form SL-problem reads:
-                    - t'' + q(x) t(x) = 2 E w(x) t(x)
-    See:
-        https://doi.org/10.1016/j.hedp.2023.101042
-    """
-    r = r_of_x(x)
-    return (
-        1.0
-        / (b + a * r) ** 2
-        * (
-            l * (l + 1)
-            + 2 * r**2 * (potential(r, potential_params) + V0)
-            + b * (b + 4 * a * r) / (4 * (b + a * r) ** 2)
-        )
-    )
-
-
-def w(x):
-    """
-    Sturm Liouville w-function of log-linear transformed radial Schroedinger equation
-    The full form SL-problem reads:
-                    - t'' + q(x) t(x) = 2 E w(x) t(x)
-    See:
-        https://doi.org/10.1016/j.hedp.2023.101042
-    """
-    r = r_of_x(x)
-    return 2 * r**2 / (b + a * r) ** 2
 
 
 def init_piecewise_constant_q(
@@ -259,50 +192,16 @@ def number_of_eigenvalues_up_to(E, params_w, params_q):
     return N0 + sign_count
 
 
-def V_effective(r, l, potential_params, potential=gravitational_potential):
-    return 0.5 * l * (l + 1) / r**2 + potential(r, potential_params)
-
-
-@jax.jit
-def wkb_estimate_of_rmax(r, l, potential_params, potential=gravitational_potential):
-    def wkb_condition_Veff(r_lower, r_upper, Emax):
-        return (
-            jnp.sqrt(2)
-            * quad(
-                jax.vmap(
-                    lambda r: jnp.sqrt(
-                        V_effective(r, l, potential_params, potential=potential) - Emax
-                    )
-                ),
-                r_lower,
-                r_upper,
-            )
-            - 18
-        )
-
-    Emax = potential(r, potential_params)
-    bisec = Bisection(
-        optimality_fun=lambda logr: wkb_condition_Veff(r, jnp.exp(logr), Emax),
-        lower=jnp.log(r),
-        upper=jnp.log(10 * r),
-        check_bracket=False,
-    )
-    logrmax = bisec.run().params
-
-    return jnp.exp(logrmax)
-
-
-def lmax(potential_params, r_max, N, potential=gravitational_potential):
+def lmax(potential_params, r_min, r_max, N, potential=gravitational_potential):
     def nmax(l, Emax, potential):
         r_wkb_for_r_ta = wkb_estimate_of_rmax(
             r_max, l, potential_params, potential=potential
         )
-        rmin = 1e-6
 
         params_q = init_piecewise_constant_q(
-            potential_params, l, V0, rmin, r_wkb_for_r_ta, N, potential=potential
+            potential_params, l, V0, r_min, r_wkb_for_r_ta, N, potential=potential
         )
-        params_w = init_piecewise_constant_w(rmin, r_wkb_for_r_ta, N)
+        params_w = init_piecewise_constant_w(r_min, r_wkb_for_r_ta, N)
         return number_of_eigenvalues_up_to(Emax, params_w, params_q)
 
     V0 = jnp.abs(potential(0.0, potential_params))
@@ -458,6 +357,15 @@ def init_radial_eigenmode_params(
     params_w = init_piecewise_constant_w(r_min, rwkb, N)
     E_l, E_u = bound_eigenvalue_k(k, Emax, params_w, params_q)
 
+    # Second pass
+    r_max = right_turning_point(0.5 * (E_l + E_u), params_w, params_q)
+    rwkb = wkb_estimate_of_rmax(r_max, l, potential_params, potential=potential)
+    params_q = init_piecewise_constant_q(
+        potential_params, l, V0, r_min, rwkb, N, potential=potential
+    )
+    params_w = init_piecewise_constant_w(r_min, rwkb, N)
+    E_l, E_u = bound_eigenvalue_k(k, Emax, params_w, params_q)
+
     return radial_eigenmode_params(
         eigenmode_params=init_eigenmode_params_between(E_l, E_u, params_w, params_q),
         l=l,
@@ -478,7 +386,7 @@ def init_eigenstate_library(
         static_argnames="N",
     )
     compute_all_nmax = jax.vmap(nmax, in_axes=(0, None, None, None, None))
-    ll = lmax(potential_params, r_max, N, potential=potential)
+    ll = lmax(potential_params, r_min, r_max, N, potential=potential)
     nn = compute_all_nmax(
         jnp.arange(ll), potential_params, r_min, r_max, N, potential=potential
     )
@@ -555,5 +463,5 @@ def eval_eigenmode(x, eigenmode_params):
 def eval_radial_eigenmode(r, radial_eigenmode_params):
     x = x_of_r(r)
     return eval_eigenmode(x, radial_eigenmode_params.eigenmode_params) / jnp.sqrt(
-        b * r + a * r**2
+        _LOG_LINEAR_GRID_B * r + _LOG_LINEAR_GRID_A * r**2
     )
