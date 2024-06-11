@@ -76,7 +76,6 @@ def _sample_gauss_legendre_integrand(
     return R_j2_log_rj, rho_in_log_rj, dlogr_jac, w_i
 
 
-@jax.tree_util.Partial
 def jensen_shannon_divergence(log_aj2, precomputed_quantities):
     R_j2_log_rj, rho_in_log_rj, dlogr_jac, w_i = precomputed_quantities
     rho_psi_log_rj = R_j2_log_rj @ jnp.exp(log_aj2)
@@ -96,7 +95,7 @@ def init_wavefunction_params(
     r_fit,
     tol,
     objective_function=jensen_shannon_divergence,
-    verbose=True,
+    verbose=False,
 ):
     result_shape = jax.ShapeDtypeStruct((), jnp.int64)
     name = jax.pure_callback(
@@ -114,7 +113,11 @@ def init_wavefunction_params(
     )
 
     gd = GradientDescent(
-        fun=objective_function, maxiter=100, tol=1e-3, implicit_diff=False
+        fun=objective_function,
+        maxiter=100,
+        tol=1e-3,
+        implicit_diff=False,
+        verbose=verbose,
     )
     lbfgs = LBFGS(
         fun=objective_function,
@@ -123,6 +126,7 @@ def init_wavefunction_params(
         stop_if_linesearch_fails=True,
         implicit_diff=False,
         linesearch="hager-zhang",
+        verbose=verbose,
     )
 
     log_aj2 = jnp.log(jnp.ones(eigenstate_library.J) / eigenstate_library.J)
