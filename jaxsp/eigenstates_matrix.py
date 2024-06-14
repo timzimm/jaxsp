@@ -5,7 +5,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
-from scipy.linalg import eigh_tridiagonal
+from scipy.linalg import eigh_tridiagonal, eigh
 from jaxopt import Broyden, ProjectedGradient
 from jaxopt.projection import projection_box
 
@@ -20,8 +20,12 @@ from .io_utils import hash_to_int64
 #     init_chebyshev_params_from_samples,
 #     eval_chebyshev_polynomial,
 # )
-from .special import lambertw
-from .radial_schroedinger import V_effective, wkb_estimate_of_rmax
+from .radial_schroedinger import (
+    V_effective,
+    x_of_r,
+    r_of_x,
+    wkb_estimate_of_rmax,
+)
 
 import logging
 
@@ -78,7 +82,7 @@ init_mult_spline_params = jax.vmap(init_1d_interpolation_params)
 def minimum_of_effective_potential(
     r_ta, l, potential_params, potential=gravitational_potential
 ):
-    V0 = potential(0.0, potential_params)
+    V0 = potential(0, potential_params)
     pg = ProjectedGradient(
         fun=lambda logr: jnp.log(
             V_effective(jnp.exp(logr), l, potential_params, potential=potential) - V0
@@ -86,15 +90,6 @@ def minimum_of_effective_potential(
         projection=projection_box,
         tol=1e-8,
     )
-    # logrmin = jax.lax.cond(
-    #     l == 0,
-    #     lambda _: jnp.log(1e-15),
-    #     lambda _: pg.run(
-    #         jnp.log(1e-1),
-    #         bounds=(jnp.log(1e-15), jnp.log(r_ta)),
-    #     ).params,
-    #     None,
-    # )
     logrmin = pg.run(
         jnp.log(1e-1), hyperparams_proj=(jnp.log(1e-15), jnp.log(r_ta))
     ).params
@@ -295,14 +290,6 @@ def check_mode_heath(E_n, E_min, E_max):
 #     )
 
 
-def x_of_r(r):
-    return r + jnp.log(r)
-
-
-def r_of_x(x):
-    return lambertw(jnp.exp(x))
-
-
 def init_eigenstate_library_fd(
     potential_params, r_ta, N, potential=gravitational_potential
 ):
@@ -324,21 +311,13 @@ def init_eigenstate_library_fd(
     n_of_j = []
 
     E_max = jnp.asarray(potential(r_ta, potential_params))
+    E_min_l = jnp.asarray(potential(0, potential_params))
     if sommerfeld_estimate_of_nmax(r_ta, potential_params, potential=potential) > N:
         logger.info("N is too small to construct the entire library!")
 
     for l in range(
         lmax_from_effective_potential(r_ta, potential_params, potential=potential)
     ):
-        E_min_l = V_effective(
-            minimum_of_effective_potential(
-                r_ta, l, potential_params, potential=potential
-            ),
-            l,
-            potential_params,
-            potential=potential,
-        )
-
         rmax = wkb_estimate_of_rmax(r_ta, l, potential_params, potential=potential)
         dr = rmax / N
         r = dr * jnp.arange(1, N)
@@ -350,7 +329,11 @@ def init_eigenstate_library_fd(
             + _V(r, potential_params)
         )
         E_n, u_n = eigh_tridiagonal(
-            H_diag, H_off_diag, select="v", select_range=(E_min_l.item(), E_max.item())
+            H_diag,
+            H_off_diag,
+            select="v",
+            select_range=(E_min_l.item(), E_max.item()),
+            tol=1e-8,
         )
         check_mode_heath(E_n, E_min_l, E_max)
         n = E_n.shape[0]
@@ -365,6 +348,14 @@ def init_eigenstate_library_fd(
         n_of_j.append(jnp.arange(n, dtype=int))
 
         l += 1
+        E_min_l = V_effective(
+            minimum_of_effective_potential(
+                r_ta, l, potential_params, potential=potential
+            ),
+            l,
+            potential_params,
+            potential=potential,
+        )
 
     R_j_r = jnp.concatenate(R_j_r)
     r0_j = jnp.concatenate(r0_j)
@@ -386,7 +377,7 @@ def init_eigenstate_library_fd(
 
 
 def init_eigenstate_library_fd_loglin(
-    potential_params, r_ta, N, potential=gravitational_potential
+    potential_params, rmin, r_ta, N, potential=gravitational_potential
 ):
     _V = jax.vmap(potential, in_axes=(0, None))
     result_shape = jax.ShapeDtypeStruct((), jnp.int64)
@@ -405,54 +396,67 @@ def init_eigenstate_library_fd_loglin(
     l_of_j = []
     n_of_j = []
 
-    E_max = potential(r_ta, potential_params)
-    if sommerfeld_estimate_of_nmax(r_ta, potential_params) > N:
+    E_max = jnp.asarray(potential(r_ta, potential_params))
+    if sommerfeld_estimate_of_nmax(r_ta, potential_params, potential=potential) > N:
         logger.info("N is too small to construct the entire library!")
 
-    for l in range(lmax(r_ta, potential_params)):
+    xmin = x_of_r(rmin)
+    rs_of_xs = jax.vmap(r_of_x)
+    for l in range(
+        1  # lmax_from_effective_potential(r_ta, potential_params, potential=potential)
+    ):
         E_min_l = V_effective(
-            minimum_of_effective_potential(r_ta, l, potential_params),
+            minimum_of_effective_potential(
+                r_ta, l, potential_params, potential=potential
+            ),
             l,
             potential_params,
+            potential=potential,
         )
 
-        rmin = wkb_estimate_of_rmin(
-            lower_turning_point(r_ta, l, potential_params), l, potential_params
-        )
-        rmax = wkb_estimate_of_rmax(r_ta, l, potential_params)
+        rmax = wkb_estimate_of_rmax(r_ta, l, potential_params, potential=potential)
         xmax = x_of_r(rmax)
-        xmin = x_of_r(rmin)
-        x = jnp.linspace(xmin, xmax, N)
-        dx = x[1] - x[0]
-        r = r_of_x(x)
+        dx = (xmax - xmin) / N
+        x = xmin + dx * jnp.arange(1, N)
+        r = rs_of_xs(x)
 
         H_upper = (
-            (1 + r[:-1]) ** 2
-            / r[:-1] ** 2
+            (_LOG_LINEAR_GRID_B / r[:-1] + _LOG_LINEAR_GRID_A) ** 2
             * -1
             / (2 * dx**2)
             * jnp.ones(x.shape[0] - 1)
         )
         H_lower = (
-            (1 + r[1:]) ** 2
-            / r[1:] ** 2
+            (_LOG_LINEAR_GRID_B / r[1:] + _LOG_LINEAR_GRID_A) ** 2
             * -1
             / (2 * dx**2)
             * jnp.ones(x.shape[0] - 1)
         )
+        # TODO: Understand why this simmilarity transform does not give
+        # identical results to eigh when used with eigh_tridiagonal
         H_off_diag = -jnp.sqrt(H_upper * H_lower)
         H_diag = (
-            (1 + r) ** 2 / r**2 * -1 / (2 * dx**2) * -2 * jnp.ones_like(x)
+            (_LOG_LINEAR_GRID_B / r + _LOG_LINEAR_GRID_A) ** 2
+            * -1
+            / (2 * dx**2)
+            * -2
+            * jnp.ones_like(x)
             + 0.5 * l * (l + 1) / r**2
             + _V(r, potential_params)
-            + (1 + 4 * r) / (8 * r**2 * (1 + r) ** 2)
+            + _LOG_LINEAR_GRID_B
+            * (_LOG_LINEAR_GRID_B + 4 * _LOG_LINEAR_GRID_A * r)
+            / (8 * r**2 * (_LOG_LINEAR_GRID_B + _LOG_LINEAR_GRID_A * r) ** 2)
         )
-        E_n, t_n = eigh_tridiagonal(
-            H_diag,
-            H_off_diag,
-            select="v",
-            select_range=(E_min_l.item(), E_max.item()),
+        print(H_off_diag[:5])
+        print(H_diag[:5])
+        E_n = eigh(
+            jnp.diag(H_diag) + jnp.diag(H_off_diag, 1) + jnp.diag(H_off_diag, -1),
+            eigvals_only=True
+            # subset_by_value=(E_min_l.item(), E_max.item()),
         )
+        print(E_n[:5], E_n.dtype)
+        print()
+        return H_lower, H_diag, H_upper
 
         check_mode_heath(E_n, E_min_l, E_max)
         n = E_n.shape[0]
@@ -499,8 +503,10 @@ def eval_eigenstate(r, R_j_params):
 
 
 def eval_eigenstate_loglin(r, R_j_params):
-    return eval_interp1d(x_of_r(r), R_j_params) / (r * jnp.sqrt(1 / r + 1))
+    return eval_interp1d(x_of_r(r), R_j_params) / jnp.sqrt(
+        _LOG_LINEAR_GRID_B * r + _LOG_LINEAR_GRID_A * r**2
+    )
 
 
-def eval_eigenstate_cheb(r, R_j_params):
-    return eval_chebyshev_polynomial(r, R_j_params) / r
+# def eval_eigenstate_cheb(r, R_j_params):
+#     return eval_chebyshev_polynomial(r, R_j_params) / r
