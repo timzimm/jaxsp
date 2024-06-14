@@ -7,20 +7,7 @@ from .utils import quad
 from .potential import potential as gravitational_potential
 
 
-_LOG_LINEAR_GRID_A = 1
-_LOG_LINEAR_GRID_B = 10
-
-
-@jax.jit
-def x_of_r(r):
-    """
-    Transformation from loglinear (non-uniform) r to linear (uniform) x
-    """
-    return _LOG_LINEAR_GRID_A * r + jax.scipy.special.xlogy(_LOG_LINEAR_GRID_B, r)
-
-
-@jax.jit
-def r_of_x(x):
+def r_of_x(x, a, b):
     """
     Transformation from linear (uniform) x to log-linear (non-uniform) r
     """
@@ -37,23 +24,37 @@ def r_of_x(x):
         L2 = jnp.log(L1)
         return L1 - L2 + L2 / L1 + L2 * (-2 + L2) / (2 * L1**2)
 
-    a = _LOG_LINEAR_GRID_A
-    b = _LOG_LINEAR_GRID_B
+    def lambertw_grid(x, a, b):
+        return jax.lax.cond(
+            x / b < 100,
+            lambda x: b / a * lambertw(a / b * jnp.exp(x / b)),
+            lambda x: b / a * lambertw_exp_asymptotic(x, a, b),
+            x,
+        )
 
-    if a == 0:
+    def exp_grid(x, a, b):
         return jnp.exp(x / b)
-    if b == 0:
+
+    def linear_grid(x, a, b):
         return x / a
-    return jax.lax.cond(
-        x < 100,
-        lambda x: b / a * lambertw(a / b * jnp.exp(x / b)),
-        lambda x: b / a * lambertw_exp_asymptotic(x, a, b),
-        x,
-    )
+
+    def linear_or_lambertw(x, a, b):
+        return jax.lax.cond(b == 0, linear_grid, lambertw_grid, x, a, b)
+
+    return jax.lax.cond(a == 0, exp_grid, linear_or_lambertw, x, a, b)
+
+
+def x_of_r(r, a, b):
+    """
+    Transformation from loglinear (non-uniform) r to linear (uniform) x
+    """
+    return a * r + jax.scipy.special.xlogy(b, r)
 
 
 def q(
     x,
+    a,
+    b,
     l,
     V0,
     potential_params,
@@ -66,9 +67,7 @@ def q(
     See:
         https://doi.org/10.1016/j.hedp.2023.101042
     """
-    a = _LOG_LINEAR_GRID_A
-    b = _LOG_LINEAR_GRID_B
-    r = r_of_x(x)
+    r = r_of_x(x, a, b)
     return (
         1.0
         / (b + a * r) ** 2
@@ -80,7 +79,7 @@ def q(
     )
 
 
-def w(x):
+def w(x, a, b):
     """
     Sturm Liouville w-function of log-linear transformed radial Schroedinger equation
     The full form SL-problem reads:
@@ -88,39 +87,12 @@ def w(x):
     See:
         https://doi.org/10.1016/j.hedp.2023.101042
     """
-    a = _LOG_LINEAR_GRID_A
-    b = _LOG_LINEAR_GRID_B
-    r = r_of_x(x)
+    r = r_of_x(x, a, b)
     return 2 * r**2 / (b + a * r) ** 2
 
 
 def V_effective(r, l, potential_params, potential=gravitational_potential):
     return 0.5 * l * (l + 1) / r**2 + potential(r, potential_params)
-
-
-# def bisect(obj, lower, upper, iterations=100, tol=1e-8):
-#     objective = jax.jit(obj)
-
-#     def bracket(i_obj_lower_obj_upper_lower_upper):
-#         i, obj_lower, obj_upper, lower, upper = i_obj_lower_obj_upper_lower_upper
-#         mid = 0.5 * (lower + upper)
-#         obj_mid = objective(mid)
-#         cond = jnp.sign(obj_lower) == jnp.sign(obj_mid)
-#         upper = jnp.where(cond, upper, mid)
-#         obj_upper = jnp.where(cond, obj_upper, obj_mid)
-#         lower = jnp.where(cond, mid, lower)
-#         obj_lower = jnp.where(cond, obj_mid, obj_lower)
-
-#         return (i + 1, obj_lower, obj_upper, lower, upper)
-
-#     def not_converged(i_obj_lower_obj_upper_lower_upper):
-#         i, _, _, lower, upper = i_obj_lower_obj_upper_lower_upper
-#         return jnp.logical_and(i < iterations, jnp.abs(upper - lower) > tol)
-
-#     i, _, _, l, u = jax.lax.while_loop(
-#         not_converged, bracket, (0, -18.0, objective(upper), lower, upper)
-#     )
-#     return 0.5 * (l + u)
 
 
 @jax.jit
