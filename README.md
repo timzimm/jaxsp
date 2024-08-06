@@ -27,7 +27,7 @@ that involves the constructed wave function is therefore differentiable
 to implement.
 
 <figure>
-  <img src="https://github.com/james-alvey-42/jaxsp/blob/c23a854ffbaeaa7e81a07ff5d860efd0b212f534/images/leoII.png" alt="" width="500" align="center">
+  <img src="https://github.com/timzimm/jaxsp/blob/45cea58a9eea882c9a49bac5fae325bd303614e4/images/leoII.png" alt="" width="500" align="center">
   <figcaption align="center">
   Volume rendering of the ULDM density constructed by jaxsp as fit of a library of 
   eigenstates to a density sample of Leo II provided by https://github.com/justinread/gravsphere
