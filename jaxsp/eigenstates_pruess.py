@@ -77,22 +77,19 @@ class eigenstate_library(NamedTuple):
         )
 
 
-def select_eigenmode_nl(n, l, eigenstate_library):
-    radial_eigenmode_params = eigenstate_library.radial_eigenmode_params
+def select_eigenmode_nl(n, l, lib):
+    radial_eigenmode_params = lib.radial_eigenmode_params
+    n = radial_eigenmode_params.n == n
+    l = radial_eigenmode_params.n == l
     single_mode_params = jax.tree_util.tree_map(
-        lambda param: param[
-            jnp.logical_and(
-                radial_eigenmode_params.n == n,
-                radial_eigenmode_params.l == l,
-            )
-        ],
+        lambda param: param[jnp.logical_and(n, l)],
         radial_eigenmode_params,
     )
 
     return eigenstate_library(
         radial_eigenmode_params=single_mode_params,
-        name=eigenstate_library.name,
-        potential_params=eigenstate_library.potential_params,
+        name=lib.name,
+        potential_params=lib.potential_params,
     )
 
 
@@ -105,7 +102,8 @@ def init_piecewise_constant_q(
         f_i=qq(
             1 / 2 * (x[:-1] + x[1:]), a, b, l, V0, potential_params, potential=potential
         ),
-        x_i=x,
+        x0=x[0],
+        dx=x[1] - x[0],
     )
 
 
@@ -114,7 +112,8 @@ def init_piecewise_constant_w(rmin, rmax, a, b, N):
     x = jnp.linspace(x_of_r(rmin, a, b), x_of_r(rmax, a, b), N)
     return piecewise_constant_interpolation_params(
         f_i=ww(1 / 2 * (x[:-1] + x[1:]), a, b),
-        x_i=x,
+        x0=x[0],
+        dx=x[1] - x[0],
     )
 
 
@@ -163,7 +162,7 @@ def A_k(wk2, lk):
 def right_turning_point(E, a, b, params_w, params_q):
     wk2 = params_w.f_i * E - params_q.f_i
     k = jnp.argmax(wk2[::-1] >= 0)
-    return r_of_x(params_q.x_i[-1 - k], a, b)
+    return r_of_x(params_q.x0 + (params_q.f_i.shape[0] - k - 0.5) * params_q.dx, a, b)
 
 
 def number_of_eigenvalues_up_to(E, params_w, params_q):
@@ -184,7 +183,7 @@ def number_of_eigenvalues_up_to(E, params_w, params_q):
 
     wk2 = params_w.f_i * E - params_q.f_i
     wk_allowed = jnp.sqrt(jax.nn.relu(wk2))
-    lk = params_q.x_i[1] - params_q.x_i[0]
+    lk = params_q.dx
 
     N0 = jnp.sum((wk_allowed * lk / jnp.pi).astype(int))
     Ak = jax.vmap(A_k, in_axes=(0, None))(wk2, lk)
@@ -231,7 +230,7 @@ def nmax(l, potential_params, r_min, r_max, a, b, N, potential=gravitational_pot
     return number_of_eigenvalues_up_to(Emax, params_w, params_q).astype(jnp.int32)
 
 
-def bound_eigenvalue_k(k, Emax, params_w, params_q, eps=1e-8):
+def bound_eigenvalue_k(k, Emax, params_w, params_q, eps=1e-10):
     """
     WW-algorithm based, modified bisection to bound eigenvalue E_k.
 
@@ -240,107 +239,81 @@ def bound_eigenvalue_k(k, Emax, params_w, params_q, eps=1e-8):
         10.1002/nme.1620260810 (better method TODO)
     """
 
-    def not_converged(E_l_E_E_u):
-        E_l, E, E_u = E_l_E_E_u
-        abserr = jnp.abs(E_u - E_l)
-        relerr = abserr / jnp.abs(E_u)
-        return jnp.logical_and(abserr > eps, relerr > eps)
-
-    def adjust_bracket(E_l_E_E_u):
-        E_l, E, E_u = E_l_E_E_u
+    def adjust_bracket(i, E_l_E_u):
+        E_l, E_u = E_l_E_u
         E = 0.5 * (E_l + E_u)
         return jax.lax.cond(
             number_of_eigenvalues_up_to(E, params_w, params_q) >= k,
-            lambda E_l, E, E_u: (E_l, E, E),
-            lambda E_l, E, E_u: (E, E, E_u),
+            lambda E_l, E_u: (E_l, E),
+            lambda E_l, E_u: (E, E_u),
             E_l,
-            E,
             E_u,
         )
 
     E_l, E_u = 0.0, Emax
-    E = 0.5 * (E_u + E_l)
-    E_l, _, E_u = jax.lax.while_loop(not_converged, adjust_bracket, (E_l, E, E_u))
+    n = (jnp.ceil(jnp.log2(Emax / eps))).astype(int)
+    E_l, E_u = jax.lax.fori_loop(1, n, adjust_bracket, (E_l, E_u))
     return E_l, E_u
 
 
-# def itp(k, Emax, params_w, params_q, eps=1e-8):
-#     n_half = jnp.ceil(jnp.log2(Emax / eps))
-#     n_max = n_half
-#     k1 = 0.1
-#     k2 = 0.98 * (1 + (1 + jnp.sqrt(5)) / 2)
-#     r_first = eps * jnp.left_shift(2, n_max - k - 1)
-
-#     def interpolate_truncate_project(i_k_l_k_u_E_l_E_u):
-#         i, k_l, k_u, E_l, E_u = i_k_l_k_u_E_l_E_u
-
-#         # Interpolation
-#         E_interp = (k_u * E_l - k_l * E_u) / (k_u - k_l)
-
-#         # Truncation
-#         E_mid = 0.5 * (E_l + E_u)
-#         s = jnp.sign(E_mid - E_interp)
-#         delta = k1 * (E_u - E_l) ** k2
-#         E_trunc = jnp.cond(
-#             delta <= jnp.abs(E_mid - E_interp),
-#             lambda mid, interp, s, delta: E_interp + s * delta,
-#             lambda mid, interp, s, delta: E_mid,
-#             E_mid,
-#             E_interp,
-#             s,
-#             delta,
-#         )
-
-#         # Projection
-#         r = r_first - (E_u - E_l) / 2
-#         E_candidate = jnp.cond(
-#             jnp.abs(E_trunc - E_mid) <= r,
-#             lambda E_mid, E_trunc, s, r: E_trunc,
-#             lambda E_mid, E_trunc, s, r: E_mid - s * r,
-#             E_mid,
-#             E_trunc,
-#             s,
-#             r,
-#         )
-#         k_candidate = number_of_eigenvalues_up_to(E_candidate, params_w, params_q)
-
-#         # Update
-#         k_l_k_u, E_l_E_u = jax.lax.cond(
-#             k_candidate >= k,
-#             lambda E_l, k_l, E_candidate, k_candidate, E_u, k_u: (
-#                 (k_l, k_candidate),
-#                 (E_l, E_candidate),
-#             ),
-#             lambda E_l, k_l, E_candidate, k_candidate, E_u, k_u: (
-#                 (k_candidate, k_u),
-#                 (E_candidate, E_u),
-#             ),
-#             E_l,
-#             k_l,
-#             E_candidate,
-#             k_candidate,
-#             E_u,
-#             k_u,
-#         )
-
-#         return (i + 1, *k_l_k_u, *E_l_E_u)
-
-#     def not_converged(i_k_l_k_u_E_l_E_u):
-#         _, _, _, _, E_l, E_u = i_k_l_k_u_E_l_E_u
-#         abserr = jnp.abs(E_u - E_l)
-#         relerr = abserr / jnp.abs(E_u)
-#         return jnp.logical_and(abserr > eps, relerr > eps)
-
-#     k_l = number_of_eigenvalues_up_to(Emax, params_w, params_q)
-#     k_u = number_of_eigenvalues_up_to(0, params_w, params_q)
-#     i, _, _, E_l, E_u = jax.lax.while_loop(
-#         not_converged, interpolate_truncate_project, (0, k_l, k_u, 0, Emax)
-#     )
-#     return E_l, E_u
+compute_diagonal_elements_of_adjacency_mat = jax.vmap(A_k, in_axes=(0, None))
+compute_offdiagonal_elements_of_adjacency_mat = jax.vmap(B_k, in_axes=(0, None))
 
 
-compute_diagonal_elements_of_adjacency_mat = jax.vmap(A_k)
-compute_offdiagonal_elements_of_adjacency_mat = jax.vmap(B_k)
+def _double(f, args):
+    return (f(*args), f(*args))
+
+
+def _tridiagonal_solve_first_stage(dl, d, du):
+    def fwd1(tu_, x):
+        return x[1] / (x[0] - x[2] * tu_)
+
+    # Move relevant dimensions to the front for the scan.
+    dl = jnp.moveaxis(dl, -1, 0)
+    d = jnp.moveaxis(d, -1, 0)
+    du = jnp.moveaxis(du, -1, 0)
+
+    # Forward pass.
+    _, tu_ = jax.lax.scan(
+        lambda tu_, x: _double(fwd1, (tu_, x)), du[0] / d[0], (d, du, dl), unroll=32
+    )
+
+    return dl, d, tu_
+
+
+def _tridiagonal_solve_second_stage(dl, d, tu_, b):
+    def prepend_zero(x):
+        return jnp.append(jnp.zeros((1,) + x.shape[1:], dtype=x.dtype), x[:-1], axis=0)
+
+    def fwd2(b_, x):
+        return (x[0] - x[3][jnp.newaxis, ...] * b_) / (x[1] - x[3] * x[2])[
+            jnp.newaxis, ...
+        ]
+
+    def bwd1(x_, x):
+        return x[0] - x[1][jnp.newaxis, ...] * x_
+
+    # Move relevant dimensions to the front for the scan.
+    b = jnp.moveaxis(b, -1, 0)
+    b = jnp.moveaxis(b, -1, 0)
+
+    # Forward pass.
+    _, b_ = jax.lax.scan(
+        lambda b_, x: _double(fwd2, (b_, x)),
+        b[0] / d[0:1],
+        (b, d, prepend_zero(tu_), dl),
+        unroll=32,
+    )
+
+    # Backsubstitution.
+    _, x_ = jax.lax.scan(
+        lambda x_, x: _double(bwd1, (x_, x)), b_[-1], (b_[::-1], tu_[::-1]), unroll=32
+    )
+
+    result = x_[::-1]
+    result = jnp.moveaxis(result, 0, -1)
+    result = jnp.moveaxis(result, 0, -1)
+    return result
 
 
 def init_eigenmode_params_between(E_l, E_u, params_w, params_q, eps=1e-8):
@@ -364,64 +337,70 @@ def init_eigenmode_params_between(E_l, E_u, params_w, params_q, eps=1e-8):
         dl = -B[:-1].at[0].set(0)
         return dl, d, du
 
-    lk = jnp.diff(params_q.x_i)
+    lk = params_q.dx
     dl_l, d_l, du_l = K(E_l)
     dl_u, d_u, du_u = K(E_u)
     dl_ul = dl_u - dl_l
     d_ul = d_u - d_l
     du_ul = du_u - du_l
-    K_m = K(0.5 * (E_l + E_u))
 
-    def not_converged(vk_vkm1):
-        vk, vkm1 = vk_vkm1
+    E_m = 0.5 * (E_l + E_u)
+    K_m = _tridiagonal_solve_first_stage(*K(E_m))
+
+    def not_converged(vk_muk_vkm1):
+        vk, _, vkm1 = vk_muk_vkm1
         return jnp.max(jnp.abs(jnp.abs(vk) - jnp.abs(vkm1))) > eps
 
-    def inverse_iteration(vk_vkm1):
-        vk, _ = vk_vkm1
-        rhs = dl_ul * vk + d_ul * vk + du_ul * vk
-        vkp1 = jax.lax.linalg.tridiagonal_solve(*K_m, rhs[:, jnp.newaxis]).ravel()
-        return vkp1 / jnp.max(jnp.abs(vkp1)), vk
+    def inverse_iteration(vk_muk_vkm1):
+        vk, _, _ = vk_muk_vkm1
+        rhs = dl_ul * jnp.roll(vk, 1) + d_ul * vk + du_ul * jnp.roll(vk, -1)
+        vkp1 = _tridiagonal_solve_second_stage(*K_m, rhs[:, jnp.newaxis]).ravel()
+        mukp1 = 1.0 / jnp.max(jnp.abs(vkp1))
+        return mukp1 * vkp1, mukp1, vk
 
     key = jax.random.PRNGKey(42)
-    key, key2 = jax.random.split(key)
+    key, key2 = jax.random.split(key, 2)
 
-    N = params_q.x_i.shape[0] - 2
-    tk = jax.lax.while_loop(
+    N = params_q.f_i.shape[0] - 1
+    tk, muk, _ = jax.lax.while_loop(
         not_converged,
         inverse_iteration,
-        (jax.random.uniform(key, shape=(N,)), jax.random.uniform(key2, shape=(N,))),
-    )[0]
+        (
+            jax.random.uniform(key, shape=(N,)),
+            0.5,
+            jax.random.uniform(key2, shape=(N,)),
+        ),
+    )
+    # mu check + extrapolation
+    E = jnp.where(jnp.abs(muk) < 1 / 2, E_m - muk * (E_u - E_l), E_m)
 
     # Normalisation
-    wk2 = params_w.f_i * 0.5 * (E_l + E_u) - params_q.f_i
+    wk2 = params_w.f_i * E - params_q.f_i
     A = compute_diagonal_elements_of_adjacency_mat(wk2, lk)
     B = compute_offdiagonal_elements_of_adjacency_mat(wk2, lk)
     N = jnp.sum(
         params_w.f_i[1:-1]
         / (2 * jnp.abs(wk2[1:-1]))
         * (
-            (tk[:-1] ** 2 + tk[1:] ** 2) * (B[1:-1] ** 2 * lk[1:-1] - A[1:-1])
-            + 2 * B[1:-1] * tk[:-1] * tk[1:] * (1 - A[1:-1] * lk[1:-1])
+            (tk[:-1] ** 2 + tk[1:] ** 2) * (B[1:-1] ** 2 * lk - A[1:-1])
+            + 2 * B[1:-1] * tk[:-1] * tk[1:] * (1 - A[1:-1] * lk)
         )
     )
     N += (
-        params_w.f_i[0]
-        / (2 * jnp.abs(wk2[0]))
-        * (tk[0] ** 2)
-        * (B[0] ** 2 * lk[0] - A[0])
+        params_w.f_i[0] / (2 * jnp.abs(wk2[0])) * (tk[0] ** 2) * (B[0] ** 2 * lk - A[0])
     )
     N += (
         params_w.f_i[-1]
         / (2 * jnp.abs(wk2[-1]))
         * (tk[-1] ** 2)
-        * (B[-1] ** 2 * lk[-1] - A[-1])
+        * (B[-1] ** 2 * lk - A[-1])
     )
 
     return eigenmode_params(
-        tk=tk / jnp.sqrt(N),
+        tk=jnp.pad(tk / jnp.sqrt(N), 1),
         wk2=wk2,
-        x0=params_q.x_i[0],
-        dx=params_q.x_i[1] - params_q.x_i[0],
+        x0=params_q.x0,
+        dx=params_q.dx,
     )
 
 
@@ -439,14 +418,15 @@ def init_radial_eigenmode_params(
     E_l, E_u = bound_eigenvalue_k(k, Emax, params_w, params_q)
 
     # Second pass
-    r_max = right_turning_point(0.5 * (E_l + E_u), a, b, params_w, params_q)
-    rwkb = wkb_estimate_of_rmax(r_max, l, potential_params, potential=potential)
-    params_q = init_piecewise_constant_q(
-        potential_params, l, V0, r_min, rwkb, a, b, N, potential=potential
-    )
-    params_w = init_piecewise_constant_w(r_min, rwkb, a, b, N)
-    E_l, E_u = bound_eigenvalue_k(k, Emax, params_w, params_q)
-    # jax.debug.print("n={n}, El={E_l}, dE={dE}", n=n, E_l=E_l, dE=jnp.abs(E_l - E_u))
+    # r_max = right_turning_point(0.5 * (E_l + E_u), a, b, params_w, params_q)
+    # rwkb = wkb_estimate_of_rmax(
+    #     r_max, l, potential_params, nfold=50, potential=potential
+    # )
+    # params_q = init_piecewise_constant_q(
+    #     potential_params, l, V0, r_min, rwkb, a, b, N, potential=potential
+    # )
+    # params_w = init_piecewise_constant_w(r_min, rwkb, a, b, N)
+    # E_l, E_u = bound_eigenvalue_k(k, Emax, params_w, params_q)
 
     return radial_eigenmode_params(
         eigenmode_params=init_eigenmode_params_between(E_l, E_u, params_w, params_q),
@@ -499,9 +479,6 @@ def init_eigenstate_library(
     ls = jnp.repeat(jnp.arange(ll), nn)
     ns = jnp.concatenate([jnp.arange(n) for n in nn])
 
-    # ns = jnp.arange(35, 45)
-    # ls = jnp.repeat(0, ns.shape[0])
-
     return eigenstate_library(
         radial_eigenmode_params=init_radial_eigenmodes(
             ls, ns, potential_params, r_min, r_max, a, b, N, potential=potential
@@ -536,17 +513,17 @@ def eval_eigenmode(x, eigenmode_params):
 
     dx = eigenmode_params.dx
     x0 = eigenmode_params.x0
-    x = jnp.clip(x, x0 + dx, x0 + dx * eigenmode_params.tk.shape[0])
-    k = ((x - x0) // dx + 1).astype(int)
+    x = jnp.clip(x, x0, x0 + dx * eigenmode_params.wk2.shape[0])
+    k = ((x - x0) // dx).astype(int)
 
     wk2 = eigenmode_params.wk2[k]
     wk = jnp.sqrt(jnp.abs(wk2))
 
-    xk = dx * k + x0
+    xk = dx * (k + 1) + x0
     xkm1 = xk - dx
 
-    A = eigenmode_params.tk[k - 1]
-    B = eigenmode_params.tk[k]
+    A = eigenmode_params.tk[k]
+    B = eigenmode_params.tk[k + 1]
 
     tk = jax.lax.switch(
         (jnp.sign(wk2) + 1).astype(int),

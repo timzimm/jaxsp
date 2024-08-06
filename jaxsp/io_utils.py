@@ -8,7 +8,6 @@ import jax.numpy as jnp
 import mgzip
 
 # import orbax.checkpoint as ocp
-import shutil
 
 # checkpointer = ocp.AsyncCheckpointer(ocp.PyTreeCheckpointHandler(), timeout_secs=50)
 
@@ -25,7 +24,7 @@ def save_model(enforce_save, cache_dir, name, model):
     if os.path.exists(path) and not enforce_save:
         return
     if os.path.exists(path):
-        shutil.rmtree(path)
+        os.remove(path)
     # save_args = ocp.args.StandardSave(model)
     # checkpointer.save(path, model, save_args=save_args)
     with mgzip.open(path, mode="wb") as file:

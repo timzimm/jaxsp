@@ -10,7 +10,6 @@ from s2fft.transforms.spherical import inverse_jax as inverse_sht
 from .profiles import rho as rho, total_mass
 from .eigenstates_pruess import eval_radial_eigenmode
 from .io_utils import hash_to_int64
-from .utils import _glx128 as x_i, _glw128 as w_i
 from .utils import leggauss_unit_interval
 
 
@@ -95,8 +94,12 @@ def init_wavefunction_params(
     r_fit,
     tol,
     objective_function=jensen_shannon_divergence,
-    verbose=False,
 ):
+    return_single = False
+    if not isinstance(tol, list):
+        tol = [tol]
+        return_single = True
+
     result_shape = jax.ShapeDtypeStruct((), jnp.int64)
     name = jax.pure_callback(
         wavefunction_params.compute_name,
@@ -117,7 +120,6 @@ def init_wavefunction_params(
         maxiter=100,
         tol=1e-3,
         implicit_diff=False,
-        verbose=verbose,
     )
     lbfgs = LBFGS(
         fun=objective_function,
@@ -126,98 +128,62 @@ def init_wavefunction_params(
         stop_if_linesearch_fails=True,
         implicit_diff=False,
         linesearch="hager-zhang",
-        verbose=verbose,
     )
 
     log_aj2 = jnp.log(jnp.ones(eigenstate_library.J) / eigenstate_library.J)
     res = gd.run(log_aj2, precomputed_quantities=precomputed_quantities)
-    res = lbfgs.run(res.params, precomputed_quantities=precomputed_quantities)
 
-    params = wavefunction_params(
-        eigenstate_library=eigenstate_library.name,
-        density_params=density_params.name,
-        aj_2=jnp.exp(res.params),
-        r_min=r_min,
-        r_fit=r_fit,
-        total_mass=total_mass(density_params),
-        distance=jensen_shannon_divergence(res.params, precomputed_quantities),
-        name=name,
-        error=res.state.error,
-        steps=res.state.iter_num,
-        failed=jnp.logical_not(res.state.failed_linesearch),
-    )
-    return params
+    kwargs_solver = {
+        "fun": objective_function,
+        "maxiter": 200000,
+        "tol": tol,
+        "stop_if_linesearch_fails": True,
+        "implicit_diff": False,
+        "linesearch": "hager-zhang",
+    }
 
+    params = res.params
+    lbfgs = LBFGS(**kwargs_solver)
+    state = lbfgs.init_state(params, precomputed_quantities)
+    step = jax.jit(lbfgs.update)
+    _, _ = lbfgs.update(params, state, precomputed_quantities)
 
-def init_wavefunction_params_jensen_shannon(
-    eigenstate_library, density_params, r_min, r_fit, tol, verbose=True
-):
-    eval_library_mult_r = jax.vmap(_eval_library, in_axes=(0, None))
-    rho_in = jax.vmap(rho, in_axes=(0, None))
+    tol = jnp.array(tol)
+    checkpoint_idx = 0
+    params_history = {}
 
-    result_shape = jax.ShapeDtypeStruct((), jnp.int64)
-    name = jax.pure_callback(
-        wavefunction_params.compute_name,
-        result_shape,
-        eigenstate_library,
-        density_params,
-        r_min,
-        r_fit,
-        tol,
-    )
-
-    log_rj = jnp.log(r_min) + (jnp.log(r_fit) - jnp.log(r_min)) * x_i
-    rho_in_log_rj = jnp.nan_to_num(
-        rho_in(jnp.exp(log_rj), density_params), nan=jnp.inf
-    ) / total_mass(density_params)
-    R_j2_log_rj = (
-        (2 * eigenstate_library.radial_eigenmode_params.l.T + 1)
-        / (4 * jnp.pi)
-        * eval_library_mult_r(
-            jnp.exp(log_rj), eigenstate_library.radial_eigenmode_params
+    def populate_model(state, params):
+        return wavefunction_params(
+            eigenstate_library=eigenstate_library.name,
+            density_params=density_params.name,
+            aj_2=jnp.exp(params),
+            r_min=r_min,
+            r_fit=r_fit,
+            total_mass=total_mass(density_params),
+            distance=objective_function(params, precomputed_quantities),
+            name=name,
+            error=state.error,
+            steps=state.iter_num,
+            failed=not state.failed_linesearch,
         )
-        ** 2
-    )
 
-    jac = 4 * jnp.pi * (jnp.log(r_fit) - jnp.log(r_min)) * jnp.exp(3 * log_rj)
+    while (state.error > tol[-1]) & jnp.logical_or(
+        not lbfgs.stop_if_linesearch_fails, ~state.failed_linesearch
+    ):
+        params, state = step(params, state, precomputed_quantities)
+        if state.error <= tol[checkpoint_idx]:
+            params_history[tol[checkpoint_idx].item()] = populate_model(state, params)
+            checkpoint_idx += 1
 
-    def jensen_shannon_divergence(log_aj2, R_j2_log_rj, rho_in_log_rj):
-        rho_psi_log_rj = R_j2_log_rj @ jnp.exp(log_aj2)
-        log_M = jnp.log2(0.5 * (rho_psi_log_rj + rho_in_log_rj))
-        kl_pm = rho_psi_log_rj * (jnp.log2(rho_psi_log_rj) - log_M)
-        kl_qm = rho_in_log_rj * (jnp.log2(rho_in_log_rj) - log_M)
-        return 0.5 * (jac * (kl_pm + kl_qm)) @ w_i
+    # Fail-safe store of last opt step in case line search fails before
+    # checkpoint
+    params_history[
+        tol[jnp.argmin(jnp.abs(tol - state.error)).item()].item()
+    ] = populate_model(state, params)
+    if return_single:
+        return params_history[tol[0].item()]
 
-    log_aj2 = jnp.log(jnp.ones(eigenstate_library.J) / eigenstate_library.J)
-
-    gd = GradientDescent(
-        fun=jensen_shannon_divergence, maxiter=100, tol=1e-3, implicit_diff=False
-    )
-    lbfgs = LBFGS(
-        fun=jensen_shannon_divergence,
-        maxiter=200000,
-        tol=tol,
-        stop_if_linesearch_fails=True,
-        implicit_diff=False,
-        linesearch="hager-zhang",
-    )
-    res = gd.run(log_aj2, R_j2_log_rj=R_j2_log_rj, rho_in_log_rj=rho_in_log_rj)
-    res = lbfgs.run(res.params, R_j2_log_rj=R_j2_log_rj, rho_in_log_rj=rho_in_log_rj)
-
-    params = wavefunction_params(
-        eigenstate_library=eigenstate_library.name,
-        density_params=density_params.name,
-        aj_2=jnp.exp(res.params),
-        r_min=r_min,
-        r_fit=r_fit,
-        total_mass=total_mass(density_params),
-        distance=jensen_shannon_divergence(res.params, R_j2_log_rj, rho_in_log_rj),
-        name=name,
-        error=res.state.error,
-        steps=res.state.iter_num,
-        failed=not res.state.failed_linesearch,
-    )
-    return params
+    return params_history
 
 
 def rho_psi(r, wavefunction_params, eigenstate_library):

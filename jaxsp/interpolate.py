@@ -26,7 +26,8 @@ class piecewise_constant_interpolation_params(NamedTuple):
     """
 
     f_i: ArrayLike
-    x_i: ArrayLike
+    x0: float
+    dx: float
 
 
 def _extrapolate1d_x(f):
@@ -68,7 +69,9 @@ def eval_interp1d(x, interpolation_params):
     return jnp.dot(dynamic_slice(interpolation_params.f, ix, (4,)), asx)
 
 
-def eval_piecewise_constant_interpolation(x, piecewise_constant_interpolation_params):
+def eval_piecewise_constant_interpolation_deprecated(
+    x, piecewise_constant_interpolation_params
+):
     params = piecewise_constant_interpolation_params
     x = jnp.clip(
         x,
@@ -77,3 +80,17 @@ def eval_piecewise_constant_interpolation(x, piecewise_constant_interpolation_pa
     )
     i = jnp.searchsorted(params.x_i, x, side="right")
     return params.f_i[i - 1]
+
+
+def eval_piecewise_constant_interpolation(x, piecewise_constant_interpolation_params):
+    params = piecewise_constant_interpolation_params
+    x = (
+        jnp.clip(
+            x,
+            params.x0,
+            params.x0 + params.f_i.shape[0] * params.dx,
+        )
+        - params.x0
+    )
+    ix = (x // params.dx).astype(int)
+    return params.f_i[ix]

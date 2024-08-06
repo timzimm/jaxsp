@@ -96,7 +96,9 @@ def V_effective(r, l, potential_params, potential=gravitational_potential):
 
 
 @jax.jit
-def wkb_estimate_of_rmax(r, l, potential_params, potential=gravitational_potential):
+def wkb_estimate_of_rmax(
+    r, l, potential_params, nfold=18, potential=gravitational_potential
+):
     def wkb_condition_Veff(r_lower, r_upper, Emax):
         return jnp.nan_to_num(
             (
@@ -111,9 +113,9 @@ def wkb_estimate_of_rmax(r, l, potential_params, potential=gravitational_potenti
                     r_lower,
                     r_upper,
                 )
-                - 18
+                - nfold
             ),
-            nan=-18.0,
+            nan=-nfold,
         )
 
     Emax = potential(r, potential_params)
