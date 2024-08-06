@@ -72,17 +72,17 @@ before executing a script that contains `jaxsp` code.
 The core functionality, i.e. computing densities, potentials, eigenstate libraries and wave function parameters, is showcased in 
 the [tutorial notebook](examples/tutorial.ipynb). For additional examples, we refer to our [paper repository](https://github.com/timzimm/boson_dsph).
 
-## Contributors
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="top" width="15%"><a href="https://github.com/timzimm"><img src="https://images.weserv.nl/?url=github.com/timzimm.png&h=114&w=114&fit=cover&mask=circle&maxage=7d" width="114px;" alt="Tim Zimmermann"/><br /><sub><b>Tim Zimmermann</b></sub></a><br /></td>
-      <td align="center" valign="top" width="15%"><a href="https://github.com/james-alvey-42"><img src="https://images.weserv.nl/?url=github.com/james-alvey-42.png&h=120&w=120&fit=cover&mask=circle&maxage=7d" width="120px;" alt="James Alvey"/><br /><sub><b>James Alvey</b></sub></a><br /></td>
-      <td align="center" valign="top" width="15%"><a href="https://djemarsh.wixsite.com/physics"><img src="https://images.weserv.nl/?url=kcl.ac.uk/newimages/nmes/person-profile-160x160/david-marsh.x2e7de521.jpg&h=120&w=120&fit=cover&mask=circle&maxage=7d" width="120px;" alt="David J.E. Marsh"/><br /><sub><b>David J.E. Marsh</b></sub></a><br /></td>
-      <td align="center" valign="top" width="15%"><a href="https://www.kcl.ac.uk/people/malcolm-fairbairn"><img src="https://images.weserv.nl/?url=kcl.ac.uk/newimages/nmes/person-profile-160x160/malcolm-fairbairn.x979948dd.jpg&h=120&w=120&fit=cover&mask=circle&maxage=7d" width="120px;" alt="Malcolm Fairbarn"/><br /><sub><b>Malcolm Fairbarn</b></sub></a><br /></td>
-    </tr>
-  </tbody>
-</table>
+<!-- ## Contributors -->
+<!-- <table> -->
+<!--   <tbody> -->
+<!--     <tr> -->
+<!--       <td align="center" valign="top" width="15%"><a href="https://github.com/timzimm"><img src="https://images.weserv.nl/?url=github.com/timzimm.png&h=114&w=114&fit=cover&mask=circle&maxage=7d" width="114px;" alt="Tim Zimmermann"/><br /><sub><b>Tim Zimmermann</b></sub></a><br /></td> -->
+<!--       <td align="center" valign="top" width="15%"><a href="https://github.com/james-alvey-42"><img src="https://images.weserv.nl/?url=github.com/james-alvey-42.png&h=120&w=120&fit=cover&mask=circle&maxage=7d" width="120px;" alt="James Alvey"/><br /><sub><b>James Alvey</b></sub></a><br /></td> -->
+<!--       <td align="center" valign="top" width="15%"><a href="https://djemarsh.wixsite.com/physics"><img src="https://images.weserv.nl/?url=kcl.ac.uk/newimages/nmes/person-profile-160x160/david-marsh.x2e7de521.jpg&h=120&w=120&fit=cover&mask=circle&maxage=7d" width="120px;" alt="David J.E. Marsh"/><br /><sub><b>David J.E. Marsh</b></sub></a><br /></td> -->
+<!--       <td align="center" valign="top" width="15%"><a href="https://www.kcl.ac.uk/people/malcolm-fairbairn"><img src="https://images.weserv.nl/?url=kcl.ac.uk/newimages/nmes/person-profile-160x160/malcolm-fairbairn.x979948dd.jpg&h=120&w=120&fit=cover&mask=circle&maxage=7d" width="120px;" alt="Malcolm Fairbarn"/><br /><sub><b>Malcolm Fairbarn</b></sub></a><br /></td> -->
+<!--     </tr> -->
+<!--   </tbody> -->
+<!-- </table> -->
 
 ## Citing jaxsp
 If you use jaxsp for any publication we kindly ask you to cite
